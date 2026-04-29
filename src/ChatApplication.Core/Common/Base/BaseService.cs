@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 namespace ChatApplication.Core.Common.Base;
 
 public abstract class BaseService

@@ -1,30 +1,56 @@
+using ChatApplication.Infrastructure.Cache.Redis;
 using ChatApplication.Infrastructure.SignalR.Interfaces;
+using StackExchange.Redis;
 
 namespace ChatApplication.Infrastructure.SignalR.Services;
 
+/// <summary>
+/// Redis-backed user connection tracker.
+///
+/// Data layout:
+///   tracker:user:{userId}       → Set of connectionIds for this user
+///   tracker:conn:{connectionId} → String userId (reverse lookup)
+/// </summary>
 public class SignalRUserTracker : IUserTracker
 {
-    private readonly Dictionary<string, HashSet<string>> _userConnections = new();
+    private readonly IDatabase _db;
+    private static readonly TimeSpan ConnectionTtl = TimeSpan.FromDays(1);
 
-    public Task TrackAsync(string userId, string connectionId)
+    public SignalRUserTracker(RedisConnection connection)
+        => _db = connection.GetDatabase();
+
+    public async Task TrackAsync(string userId, string connectionId)
     {
-        if (!_userConnections.TryGetValue(userId, out var connections))
-            _userConnections[userId] = connections = new HashSet<string>();
-        connections.Add(connectionId);
-        return Task.CompletedTask;
+        var batch = _db.CreateBatch();
+        var setTask    = batch.SetAddAsync(UserConnectionsKey(userId), connectionId);
+        var expireTask = batch.KeyExpireAsync(UserConnectionsKey(userId), ConnectionTtl);
+        var strTask    = batch.StringSetAsync(ConnectionUserKey(connectionId), userId, ConnectionTtl);
+        batch.Execute();
+        await Task.WhenAll(setTask, expireTask, strTask);
     }
 
-    public Task UntrackAsync(string connectionId)
+    public async Task UntrackAsync(string connectionId)
     {
-        foreach (var connections in _userConnections.Values)
-            connections.Remove(connectionId);
-        return Task.CompletedTask;
+        var userId = await _db.StringGetAsync(ConnectionUserKey(connectionId));
+        if (userId.IsNullOrEmpty) return;
+
+        var batch = _db.CreateBatch();
+        var removeTask = batch.SetRemoveAsync(UserConnectionsKey(userId!), connectionId);
+        var deleteTask = batch.KeyDeleteAsync(ConnectionUserKey(connectionId));
+        batch.Execute();
+        await Task.WhenAll(removeTask, deleteTask);
     }
 
-    public Task<IEnumerable<string>> GetConnectionsAsync(string userId)
-        => Task.FromResult<IEnumerable<string>>(
-            _userConnections.TryGetValue(userId, out var c) ? c : Enumerable.Empty<string>());
+    public async Task<IEnumerable<string>> GetConnectionsAsync(string userId)
+    {
+        var members = await _db.SetMembersAsync(UserConnectionsKey(userId));
+        return members.Select(m => m.ToString());
+    }
 
-    public Task<bool> IsOnlineAsync(string userId)
-        => Task.FromResult(_userConnections.TryGetValue(userId, out var c) && c.Count > 0);
+    public async Task<bool> IsOnlineAsync(string userId)
+        => await _db.KeyExistsAsync(UserConnectionsKey(userId))
+        && await _db.SetLengthAsync(UserConnectionsKey(userId)) > 0;
+
+    private static string UserConnectionsKey(string userId)     => $"tracker:user:{userId}";
+    private static string ConnectionUserKey(string connectionId) => $"tracker:conn:{connectionId}";
 }

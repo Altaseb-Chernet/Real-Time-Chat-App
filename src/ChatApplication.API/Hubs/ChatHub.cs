@@ -2,6 +2,7 @@ using System.Security.Claims;
 using ChatApplication.Core.Common.Exceptions;
 using ChatApplication.Core.Modules.Chat.Contracts;
 using ChatApplication.Core.Modules.Chat.Models;
+using ChatApplication.Core.Modules.User.Contracts;
 using ChatApplication.Infrastructure.SignalR.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
@@ -15,17 +16,20 @@ public class ChatHub : Hub
     private readonly IChatRoomService _chatRoomService;
     private readonly IUserTracker _userTracker;
     private readonly IConnectionManager _connectionManager;
+    private readonly IUserPresenceService _presenceService;
 
     public ChatHub(
         IMessageService messageService,
         IChatRoomService chatRoomService,
         IUserTracker userTracker,
-        IConnectionManager connectionManager)
+        IConnectionManager connectionManager,
+        IUserPresenceService presenceService)
     {
-        _messageService = messageService;
-        _chatRoomService = chatRoomService;
-        _userTracker = userTracker;
+        _messageService    = messageService;
+        _chatRoomService   = chatRoomService;
+        _userTracker       = userTracker;
         _connectionManager = connectionManager;
+        _presenceService   = presenceService;
     }
 
     // -------------------------------------------------------------------------
@@ -34,24 +38,28 @@ public class ChatHub : Hub
 
     public override async Task OnConnectedAsync()
     {
-        var userId = GetUserId();
+        var (userId, username) = GetIdentity();
         await _userTracker.TrackAsync(userId, Context.ConnectionId);
         await _connectionManager.AddConnectionAsync(userId, Context.ConnectionId);
+        await _presenceService.SetOnlineAsync(userId, username);
 
-        // Notify others that this user came online
         await Clients.Others.SendAsync(HubEvents.UserOnline, userId);
         await base.OnConnectedAsync();
     }
 
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
-        var userId = GetUserId();
+        var (userId, _) = GetIdentity();
         await _userTracker.UntrackAsync(Context.ConnectionId);
         await _connectionManager.RemoveConnectionAsync(Context.ConnectionId);
 
+        // Only mark offline when the user has no remaining connections
         var stillOnline = await _userTracker.IsOnlineAsync(userId);
         if (!stillOnline)
+        {
+            await _presenceService.SetOfflineAsync(userId);
             await Clients.Others.SendAsync(HubEvents.UserOffline, userId);
+        }
 
         await base.OnDisconnectedAsync(exception);
     }
@@ -186,6 +194,12 @@ public class ChatHub : Hub
         => Context.User?.FindFirstValue(ClaimTypes.Name)
         ?? Context.User?.FindFirstValue("email")
         ?? GetUserId();
+
+    private (string userId, string username) GetIdentity()
+    {
+        var userId = GetUserId();
+        return (userId, GetUsername());
+    }
 
     private static string RoomGroup(string roomId) => $"room:{roomId}";
 }

@@ -58,7 +58,7 @@ public class TokenService : ITokenService
         try
         {
             var principal = GetPrincipal(token);
-            return principal.FindFirstValue(JwtRegisteredClaimNames.Sub);
+            return principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
         }
         catch
         {

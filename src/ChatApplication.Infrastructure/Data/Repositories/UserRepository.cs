@@ -5,13 +5,16 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ChatApplication.Infrastructure.Data.Repositories;
 
-public class UserRepository : GenericRepository<User>, IUserRepository
+public class UserRepository : GenericRepository<AppUser>, IUserRepository
 {
     public UserRepository(ApplicationDbContext context) : base(context) { }
 
-    public Task<User?> GetByEmailAsync(string email)
+    public Task<AppUser?> GetByEmailAsync(string email)
         => _dbSet.FirstOrDefaultAsync(u => u.Email == email);
 
-    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    public Task<AppUser?> GetByIdAsync(string id)
+        => _dbSet.FirstOrDefaultAsync(u => u.Id == id);
+
+    public new Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         => _context.SaveChangesAsync(cancellationToken);
 }

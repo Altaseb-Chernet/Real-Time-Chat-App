@@ -8,4 +8,7 @@ public interface IChatRoomService
     Task<ChatRoom?> GetRoomAsync(string roomId);
     Task<IEnumerable<ChatRoom>> GetRoomsAsync();
     Task DeleteRoomAsync(string roomId);
+    Task JoinRoomAsync(string roomId, string userId);
+    Task LeaveRoomAsync(string roomId, string userId);
+    Task<bool> IsMemberAsync(string roomId, string userId);
 }

@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 namespace ChatApplication.Infrastructure.Logging;
 
 public class LoggerService

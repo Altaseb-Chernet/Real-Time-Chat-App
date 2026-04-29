@@ -1,13 +1,12 @@
-using ChatApplication.Core.Modules.User.Models;
-
 namespace ChatApplication.Core.Modules.Authentication.Contracts;
 
 /// <summary>
-/// Minimal user persistence contract used by the auth layer.
+/// Minimal AppUser persistence contract used by the auth layer.
 /// </summary>
 public interface IUserRepository
 {
-    Task<User?> GetByEmailAsync(string email);
-    Task<User> AddAsync(User user);
+    Task<AppUser?> GetByIdAsync(string id);
+    Task<AppUser?> GetByEmailAsync(string email);
+    Task<AppUser> AddAsync(AppUser user);
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

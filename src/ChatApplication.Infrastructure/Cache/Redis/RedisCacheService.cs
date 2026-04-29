@@ -13,7 +13,7 @@ public class RedisCacheService : ICacheService
     public async Task<T?> GetAsync<T>(string key)
     {
         var value = await _db.StringGetAsync(key);
-        return value.IsNullOrEmpty ? default : JsonSerializer.Deserialize<T>(value!);
+        return value.IsNullOrEmpty ? default : JsonSerializer.Deserialize<T>((string)value!);
     }
 
     public async Task SetAsync<T>(string key, T value, TimeSpan? expiry = null)
