@@ -170,7 +170,9 @@ public static class ServiceExtensions
     {
         services.AddScoped<UserRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IMessageRepository, MessageRepository>();
         services.AddScoped<MessageRepository>();
+        services.AddScoped<IChatRoomRepository, ChatRoomRepository>();
         services.AddScoped<ChatRoomRepository>();
         return services;
     }

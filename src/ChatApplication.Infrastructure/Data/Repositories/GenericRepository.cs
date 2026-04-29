@@ -25,4 +25,7 @@ public class GenericRepository<T> : IRepository<T> where T : BaseEntity
         var entity = await GetByIdAsync(id);
         if (entity != null) _dbSet.Remove(entity);
     }
+
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        => _context.SaveChangesAsync(cancellationToken);
 }

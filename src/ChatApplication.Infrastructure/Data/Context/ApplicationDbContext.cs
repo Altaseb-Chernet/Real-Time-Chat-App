@@ -12,6 +12,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<ChatRoom> ChatRooms => Set<ChatRoom>();
     public DbSet<ChatRoomMember> ChatRoomMembers => Set<ChatRoomMember>();
+    public DbSet<PrivateMessage> PrivateMessages => Set<PrivateMessage>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -21,6 +22,7 @@ public class ApplicationDbContext : DbContext
         ConfigureChatRoom(modelBuilder);
         ConfigureMessage(modelBuilder);
         ConfigureChatRoomMember(modelBuilder);
+        ConfigurePrivateMessage(modelBuilder);
     }
 
     private static void ConfigureUser(ModelBuilder modelBuilder)
@@ -109,6 +111,34 @@ public class ApplicationDbContext : DbContext
                   .WithMany(r => r.Members)
                   .HasForeignKey(m => m.RoomId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    private static void ConfigurePrivateMessage(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<PrivateMessage>(entity =>
+        {
+            entity.ToTable("PrivateMessages");
+            entity.HasKey(m => m.Id);
+            entity.Property(m => m.Id).HasMaxLength(36).IsRequired();
+            entity.Property(m => m.Content).HasMaxLength(2000).IsRequired();
+            entity.Property(m => m.SenderId).HasMaxLength(36).IsRequired();
+            entity.Property(m => m.RecipientId).HasMaxLength(36).IsRequired();
+            entity.Property(m => m.SentAt).IsRequired();
+            entity.Property(m => m.IsDeleted).HasDefaultValue(false);
+
+            entity.HasOne(m => m.Sender)
+                  .WithMany()
+                  .HasForeignKey(m => m.SenderId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(m => m.Recipient)
+                  .WithMany()
+                  .HasForeignKey(m => m.RecipientId)
+                  .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(m => new { m.SenderId, m.RecipientId });
+            entity.HasIndex(m => m.SentAt);
         });
     }
 }
