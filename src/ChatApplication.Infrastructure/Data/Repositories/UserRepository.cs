@@ -12,6 +12,9 @@ public class UserRepository : GenericRepository<AppUser>, IUserRepository
     public Task<AppUser?> GetByEmailAsync(string email)
         => _dbSet.FirstOrDefaultAsync(u => u.Email == email);
 
+    public Task<AppUser?> GetByIdAsync(string id)
+        => _dbSet.FirstOrDefaultAsync(u => u.Id == id);
+
     public new Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         => _context.SaveChangesAsync(cancellationToken);
 }

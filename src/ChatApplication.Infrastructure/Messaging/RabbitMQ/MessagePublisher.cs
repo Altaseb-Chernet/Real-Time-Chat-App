@@ -13,6 +13,7 @@ public class MessagePublisher : IMessagePublisher
     public Task PublishAsync<T>(string exchange, string routingKey, T message)
     {
         using var channel = _connection.CreateChannel();
+        if (channel is null) return Task.CompletedTask; // RabbitMQ unavailable
         var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(message));
         var props = channel.CreateBasicProperties();
         props.Persistent = true;

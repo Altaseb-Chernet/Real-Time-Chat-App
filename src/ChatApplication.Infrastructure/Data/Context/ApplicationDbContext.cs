@@ -37,7 +37,13 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(u => u.Email).IsUnique();
             entity.Property(u => u.PasswordHash).IsRequired();
             entity.Property(u => u.Role).HasMaxLength(50).IsRequired().HasDefaultValue("User");
+            entity.Property(u => u.AvatarUrl).HasMaxLength(500);
+            entity.Property(u => u.Bio).HasMaxLength(300);
+            entity.Property(u => u.IsDeleted).HasDefaultValue(false);
             entity.Property(u => u.CreatedAt).IsRequired();
+
+            // Soft-delete filter
+            entity.HasQueryFilter(u => !u.IsDeleted);
         });
     }
 

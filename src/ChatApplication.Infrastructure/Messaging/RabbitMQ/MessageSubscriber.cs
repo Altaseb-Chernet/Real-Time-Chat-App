@@ -15,6 +15,7 @@ public class MessageSubscriber : IMessageSubscriber
     public Task SubscribeAsync<T>(string queue, Func<T, Task> handler)
     {
         var channel = _connection.CreateChannel();
+        if (channel is null) return Task.CompletedTask; // RabbitMQ unavailable
         var consumer = new AsyncEventingBasicConsumer(channel);
         consumer.Received += async (_, ea) =>
         {

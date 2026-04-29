@@ -5,6 +5,7 @@ namespace ChatApplication.Core.Modules.Authentication.Contracts;
 /// </summary>
 public interface IUserRepository
 {
+    Task<AppUser?> GetByIdAsync(string id);
     Task<AppUser?> GetByEmailAsync(string email);
     Task<AppUser> AddAsync(AppUser user);
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);

@@ -24,7 +24,6 @@ public class ChatRoomService : IChatRoomService
         };
 
         await _repository.AddAsync(room);
-        // Auto-join creator
         await _repository.AddMemberAsync(room.Id, createdByUserId);
         await _repository.SaveChangesAsync();
 
@@ -45,4 +44,25 @@ public class ChatRoomService : IChatRoomService
         await _repository.DeleteAsync(room.Id);
         await _repository.SaveChangesAsync();
     }
+
+    public async Task JoinRoomAsync(string roomId, string userId)
+    {
+        var room = await _repository.GetByIdAsync(roomId)
+            ?? throw new AppException(ErrorMessages.RoomNotFound, 404);
+
+        await _repository.AddMemberAsync(room.Id, userId);
+        await _repository.SaveChangesAsync();
+    }
+
+    public async Task LeaveRoomAsync(string roomId, string userId)
+    {
+        var room = await _repository.GetByIdAsync(roomId)
+            ?? throw new AppException(ErrorMessages.RoomNotFound, 404);
+
+        await _repository.RemoveMemberAsync(room.Id, userId);
+        await _repository.SaveChangesAsync();
+    }
+
+    public Task<bool> IsMemberAsync(string roomId, string userId)
+        => _repository.IsMemberAsync(roomId, userId);
 }

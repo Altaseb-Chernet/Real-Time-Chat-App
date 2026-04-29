@@ -66,14 +66,16 @@ public static class ServiceExtensions
 
     private static IServiceCollection AddRedis(this IServiceCollection services, IConfiguration configuration)
     {
-        var redisConnectionString = configuration
+        var cs = configuration
             .GetSection(nameof(RedisSettings))
             .GetValue<string>(nameof(RedisSettings.ConnectionString))
             ?? "localhost:6379";
 
-        services.AddSingleton<IConnectionMultiplexer>(_ =>
-            ConnectionMultiplexer.Connect(redisConnectionString));
+        // abortConnect=false means Connect() returns immediately even if Redis is down
+        var opts = ConfigurationOptions.Parse(cs);
+        opts.AbortOnConnectFail = false;
 
+        services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(opts));
         services.AddSingleton<RedisConnection>();
         services.AddSingleton<RedisBackplaneService>();
         services.AddScoped<ICacheService, RedisCacheService>();
@@ -107,7 +109,6 @@ public static class ServiceExtensions
                 ClockSkew = TimeSpan.Zero
             };
 
-            // Allow JWT from SignalR query string
             options.Events = new JwtBearerEvents
             {
                 OnMessageReceived = context =>
@@ -127,15 +128,19 @@ public static class ServiceExtensions
 
     private static IServiceCollection AddSignalRWithBackplane(this IServiceCollection services, IConfiguration configuration)
     {
-        var redisConnectionString = configuration
+        var cs = configuration
             .GetSection(nameof(RedisSettings))
             .GetValue<string>(nameof(RedisSettings.ConnectionString))
             ?? "localhost:6379";
 
+        var opts = ConfigurationOptions.Parse(cs);
+        opts.AbortOnConnectFail = false;
+
         services.AddSignalR()
-                .AddStackExchangeRedis(redisConnectionString, options =>
+                .AddStackExchangeRedis(o =>
                 {
-                    options.Configuration.ChannelPrefix = RedisChannel.Literal("ChatApp");
+                    o.Configuration = opts;
+                    o.Configuration.ChannelPrefix = RedisChannel.Literal("ChatApp");
                 });
 
         return services;
@@ -146,17 +151,21 @@ public static class ServiceExtensions
         var settings = configuration.GetSection(nameof(RabbitMqSettings)).Get<RabbitMqSettings>()
             ?? new RabbitMqSettings();
 
-        services.AddSingleton<IConnection>(_ =>
+        services.AddSingleton<IConnection?>(_ =>
         {
-            var factory = new ConnectionFactory
+            try
             {
-                HostName = settings.Host,
-                Port = settings.Port,
-                UserName = settings.Username,
-                Password = settings.Password,
-                DispatchConsumersAsync = true
-            };
-            return factory.CreateConnection();
+                return new ConnectionFactory
+                {
+                    HostName = settings.Host,
+                    Port = settings.Port,
+                    UserName = settings.Username,
+                    Password = settings.Password,
+                    DispatchConsumersAsync = true,
+                    RequestedConnectionTimeout = TimeSpan.FromSeconds(3)
+                }.CreateConnection();
+            }
+            catch { return null; }
         });
 
         services.AddSingleton<RabbitMqConnection>();
@@ -179,18 +188,11 @@ public static class ServiceExtensions
 
     private static IServiceCollection AddCoreServices(this IServiceCollection services)
     {
-        // Validators
         services.AddScoped<LoginRequestValidator>();
         services.AddScoped<RegisterRequestValidator>();
-
-        // Auth
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<ITokenService, TokenService>();
-
-        // User
         services.AddScoped<IUserService, UserService>();
-
-        // Chat
         services.AddScoped<IMessageService, MessageService>();
         services.AddScoped<IChatRoomService, ChatRoomService>();
         return services;
@@ -198,7 +200,6 @@ public static class ServiceExtensions
 
     private static IServiceCollection AddInfrastructureServices(this IServiceCollection services)
     {
-        // Redis-backed presence and connection tracking (singletons — all state lives in Redis)
         services.AddSingleton<IUserPresenceService, RedisUserPresenceService>();
         services.AddSingleton<IUserTracker, SignalRUserTracker>();
         services.AddSingleton<IConnectionManager, SignalRConnectionManager>();

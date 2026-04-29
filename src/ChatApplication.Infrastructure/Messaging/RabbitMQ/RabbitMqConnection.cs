@@ -4,11 +4,11 @@ namespace ChatApplication.Infrastructure.Messaging.RabbitMQ;
 
 public class RabbitMqConnection : IDisposable
 {
-    private readonly IConnection _connection;
+    private readonly IConnection? _connection;
 
-    public RabbitMqConnection(IConnection connection) => _connection = connection;
+    public RabbitMqConnection(IConnection? connection) => _connection = connection;
 
-    public IModel CreateChannel() => _connection.CreateModel();
+    public IModel? CreateChannel() => _connection?.CreateModel();
 
-    public void Dispose() => _connection.Dispose();
+    public void Dispose() => _connection?.Dispose();
 }
