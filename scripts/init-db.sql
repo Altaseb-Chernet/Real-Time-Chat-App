@@ -1,0 +1,24 @@
+-- Initial database setup
+CREATE TABLE IF NOT EXISTS "Users" (
+    "Id" VARCHAR(36) PRIMARY KEY,
+    "Username" VARCHAR(100) NOT NULL,
+    "Email" VARCHAR(255) NOT NULL UNIQUE,
+    "PasswordHash" TEXT NOT NULL,
+    "Role" VARCHAR(50) NOT NULL DEFAULT 'User',
+    "CreatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS "ChatRooms" (
+    "Id" VARCHAR(36) PRIMARY KEY,
+    "Name" VARCHAR(100) NOT NULL,
+    "CreatedByUserId" VARCHAR(36) NOT NULL,
+    "CreatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS "Messages" (
+    "Id" VARCHAR(36) PRIMARY KEY,
+    "Content" TEXT NOT NULL,
+    "SenderId" VARCHAR(36) NOT NULL,
+    "RoomId" VARCHAR(36) NOT NULL,
+    "SentAt" TIMESTAMP NOT NULL DEFAULT NOW()
+);
