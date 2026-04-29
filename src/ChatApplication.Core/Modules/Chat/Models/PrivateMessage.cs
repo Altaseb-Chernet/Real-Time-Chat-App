@@ -1,5 +1,4 @@
 using ChatApplication.Core.Common.Base;
-using ChatApplication.Core.Modules.User.Models;
 
 namespace ChatApplication.Core.Modules.Chat.Models;
 

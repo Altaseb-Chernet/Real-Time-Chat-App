@@ -1,6 +1,3 @@
-using ChatApplication.Core.Modules.User.Contracts;
-using ChatApplication.Core.Modules.User.Models;
-
 namespace ChatApplication.Core.Modules.User.Services;
 
 public class UserService : IUserService

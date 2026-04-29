@@ -1,5 +1,3 @@
-using ChatApplication.Core.Modules.User.Models;
-
 namespace ChatApplication.Core.Modules.Authentication.Contracts;
 
 /// <summary>

@@ -4,7 +4,10 @@ namespace ChatApplication.Core.Modules.User.Contracts;
 
 public interface IUserPresenceService
 {
-    Task SetOnlineAsync(string userId);
+    Task SetOnlineAsync(string userId, string username);
     Task SetOfflineAsync(string userId);
+    Task SetAwayAsync(string userId);
     Task<UserStatus> GetStatusAsync(string userId);
+    Task<IEnumerable<UserStatus>> GetOnlineUsersAsync();
+    Task<bool> IsOnlineAsync(string userId);
 }

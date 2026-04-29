@@ -4,6 +4,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
+  <!-- Suppress the System.Security.Principal implicit using that conflicts with our User model -->
+  <ItemGroup>
+    <Using Remove="System.Security.Principal" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ChatApplication.Shared\ChatApplication.Shared.csproj" />
   </ItemGroup>

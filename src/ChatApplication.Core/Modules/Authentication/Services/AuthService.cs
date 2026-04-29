@@ -5,7 +5,6 @@ using ChatApplication.Core.Dependencies.Constants;
 using ChatApplication.Core.Modules.Authentication.Contracts;
 using ChatApplication.Core.Modules.Authentication.Models;
 using ChatApplication.Core.Modules.Authentication.Validators;
-using ChatApplication.Core.Modules.User.Models;
 using Microsoft.Extensions.Options;
 
 namespace ChatApplication.Core.Modules.Authentication.Services;
