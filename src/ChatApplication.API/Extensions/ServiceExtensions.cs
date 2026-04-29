@@ -2,6 +2,7 @@ using System.Text;
 using ChatApplication.Core.Dependencies.Configuration;
 using ChatApplication.Core.Modules.Authentication.Contracts;
 using ChatApplication.Core.Modules.Authentication.Services;
+using ChatApplication.Core.Modules.Authentication.Validators;
 using ChatApplication.Core.Modules.Chat.Contracts;
 using ChatApplication.Core.Modules.Chat.Services;
 using ChatApplication.Core.Modules.User.Contracts;
@@ -168,6 +169,7 @@ public static class ServiceExtensions
     private static IServiceCollection AddRepositories(this IServiceCollection services)
     {
         services.AddScoped<UserRepository>();
+        services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<MessageRepository>();
         services.AddScoped<ChatRoomRepository>();
         return services;
@@ -175,10 +177,19 @@ public static class ServiceExtensions
 
     private static IServiceCollection AddCoreServices(this IServiceCollection services)
     {
+        // Validators
+        services.AddScoped<LoginRequestValidator>();
+        services.AddScoped<RegisterRequestValidator>();
+
+        // Auth
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<ITokenService, TokenService>();
+
+        // User
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IUserPresenceService, UserPresenceService>();
+
+        // Chat
         services.AddScoped<IMessageService, MessageService>();
         services.AddScoped<IChatRoomService, ChatRoomService>();
         return services;
