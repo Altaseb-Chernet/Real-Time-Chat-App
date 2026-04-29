@@ -189,7 +189,6 @@ public static class ServiceExtensions
 
         // User
         services.AddScoped<IUserService, UserService>();
-        services.AddScoped<IUserPresenceService, UserPresenceService>();
 
         // Chat
         services.AddScoped<IMessageService, MessageService>();
@@ -199,6 +198,8 @@ public static class ServiceExtensions
 
     private static IServiceCollection AddInfrastructureServices(this IServiceCollection services)
     {
+        // Redis-backed presence and connection tracking (singletons — all state lives in Redis)
+        services.AddSingleton<IUserPresenceService, RedisUserPresenceService>();
         services.AddSingleton<IUserTracker, SignalRUserTracker>();
         services.AddSingleton<IConnectionManager, SignalRConnectionManager>();
         return services;

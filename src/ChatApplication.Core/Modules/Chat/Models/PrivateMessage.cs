@@ -11,6 +11,6 @@ public class PrivateMessage : BaseEntity
     public bool IsDeleted { get; set; }
 
     // Navigation properties
-    public User? Sender { get; set; }
-    public User? Recipient { get; set; }
+    public AppUser? Sender { get; set; }
+    public AppUser? Recipient { get; set; }
 }

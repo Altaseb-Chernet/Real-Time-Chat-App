@@ -11,6 +11,6 @@ public class Message : BaseEntity
     public bool IsDeleted { get; set; }
 
     // Navigation properties
-    public User? Sender { get; set; }
+    public AppUser? Sender { get; set; }
     public ChatRoom? Room { get; set; }
 }

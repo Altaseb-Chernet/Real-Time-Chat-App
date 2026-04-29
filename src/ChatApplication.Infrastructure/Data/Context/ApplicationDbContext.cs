@@ -8,7 +8,7 @@ public class ApplicationDbContext : DbContext
 {
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
 
-    public DbSet<User> Users => Set<User>();
+    public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<ChatRoom> ChatRooms => Set<ChatRoom>();
     public DbSet<ChatRoomMember> ChatRoomMembers => Set<ChatRoomMember>();
@@ -27,7 +27,7 @@ public class ApplicationDbContext : DbContext
 
     private static void ConfigureUser(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<User>(entity =>
+        modelBuilder.Entity<AppUser>(entity =>
         {
             entity.ToTable("Users");
             entity.HasKey(u => u.Id);
@@ -100,7 +100,7 @@ public class ApplicationDbContext : DbContext
             entity.Property(m => m.RoomId).HasMaxLength(36).IsRequired();
             entity.Property(m => m.JoinedAt).IsRequired();
 
-            // Member -> User
+            // Member -> AppUser
             entity.HasOne(m => m.User)
                   .WithMany(u => u.ChatRoomMemberships)
                   .HasForeignKey(m => m.UserId)

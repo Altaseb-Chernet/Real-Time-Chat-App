@@ -1,3 +1,2 @@
-// Disambiguate our User model from the System.Security.Principal namespace
-// that the compiler resolves when it sees the 'User' identifier in this project.
-global using User = ChatApplication.Core.Modules.User.Models.User;
+global using AppUser = ChatApplication.Core.Modules.User.Models.AppUser;
+global using UserProfile = ChatApplication.Core.Modules.User.Models.UserProfile;

@@ -14,7 +14,9 @@ public class MessagePublisher : IMessagePublisher
     {
         using var channel = _connection.CreateChannel();
         var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(message));
-        channel.BasicPublish(exchange, routingKey, null, body);
+        var props = channel.CreateBasicProperties();
+        props.Persistent = true;
+        channel.BasicPublish(exchange, routingKey, mandatory: false, basicProperties: props, body: body);
         return Task.CompletedTask;
     }
 }

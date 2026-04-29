@@ -9,7 +9,7 @@ public class ChatRoom : BaseEntity
     public DateTime CreatedAt { get; set; }
 
     // Navigation properties
-    public User? CreatedBy { get; set; }
+    public AppUser? CreatedBy { get; set; }
     public ICollection<Message> Messages { get; set; } = new List<Message>();
     public ICollection<ChatRoomMember> Members { get; set; } = new List<ChatRoomMember>();
 }

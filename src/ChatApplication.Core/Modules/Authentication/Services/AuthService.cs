@@ -56,7 +56,7 @@ public class AuthService : IAuthService
         if (existing is not null)
             throw new AppException("Email is already in use.", 409);
 
-        var user = new User
+        var user = new AppUser
         {
             Username = request.Username,
             Email = request.Email.ToLowerInvariant(),
@@ -78,7 +78,7 @@ public class AuthService : IAuthService
         return Task.CompletedTask;
     }
 
-    private AuthResponse BuildAuthResponse(User user)
+    private AuthResponse BuildAuthResponse(AppUser user)
     {
         var token = _tokenService.GenerateToken(user.Id, user.Email, user.Role);
         return new AuthResponse
