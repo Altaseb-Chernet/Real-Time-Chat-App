@@ -32,7 +32,8 @@ public static class ServiceExtensions
             .AddDatabase(configuration)
             .AddRedis(configuration)
             .AddJwtAuthentication(configuration)
-            .AddSignalRWithBackplane(configuration)
+            .AddSignalR()   // in-memory only — no Redis backplane during dev
+            .Services
             .AddRabbitMq(configuration)
             .AddRepositories()
             .AddCoreServices()
@@ -71,11 +72,16 @@ public static class ServiceExtensions
             .GetValue<string>(nameof(RedisSettings.ConnectionString))
             ?? "localhost:6379";
 
-        // abortConnect=false means Connect() returns immediately even if Redis is down
-        var opts = ConfigurationOptions.Parse(cs);
-        opts.AbortOnConnectFail = false;
+        // Lazy singleton — connection is created on first actual use, not at startup
+        services.AddSingleton<IConnectionMultiplexer>(_ =>
+        {
+            var opts = ConfigurationOptions.Parse(cs);
+            opts.AbortOnConnectFail = false;
+            opts.ConnectTimeout    = 1000;
+            opts.SyncTimeout       = 1000;
+            return ConnectionMultiplexer.Connect(opts);
+        });
 
-        services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(opts));
         services.AddSingleton<RedisConnection>();
         services.AddSingleton<RedisBackplaneService>();
         services.AddScoped<ICacheService, RedisCacheService>();
@@ -93,22 +99,23 @@ public static class ServiceExtensions
         services.AddAuthentication(options =>
         {
             options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-            options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            options.DefaultChallengeScheme    = JwtBearerDefaults.AuthenticationScheme;
         })
         .AddJwtBearer(options =>
         {
             options.TokenValidationParameters = new TokenValidationParameters
             {
-                ValidateIssuer = true,
-                ValidateAudience = true,
-                ValidateLifetime = true,
+                ValidateIssuer           = true,
+                ValidateAudience         = true,
+                ValidateLifetime         = true,
                 ValidateIssuerSigningKey = true,
-                ValidIssuer = jwtSettings.Issuer,
-                ValidAudience = jwtSettings.Audience,
-                IssuerSigningKey = new SymmetricSecurityKey(key),
-                ClockSkew = TimeSpan.Zero
+                ValidIssuer              = jwtSettings.Issuer,
+                ValidAudience            = jwtSettings.Audience,
+                IssuerSigningKey         = new SymmetricSecurityKey(key),
+                ClockSkew                = TimeSpan.Zero
             };
 
+            // Allow JWT from SignalR query string
             options.Events = new JwtBearerEvents
             {
                 OnMessageReceived = context =>
@@ -126,31 +133,12 @@ public static class ServiceExtensions
         return services;
     }
 
-    private static IServiceCollection AddSignalRWithBackplane(this IServiceCollection services, IConfiguration configuration)
-    {
-        var cs = configuration
-            .GetSection(nameof(RedisSettings))
-            .GetValue<string>(nameof(RedisSettings.ConnectionString))
-            ?? "localhost:6379";
-
-        var opts = ConfigurationOptions.Parse(cs);
-        opts.AbortOnConnectFail = false;
-
-        services.AddSignalR()
-                .AddStackExchangeRedis(o =>
-                {
-                    o.Configuration = opts;
-                    o.Configuration.ChannelPrefix = RedisChannel.Literal("ChatApp");
-                });
-
-        return services;
-    }
-
     private static IServiceCollection AddRabbitMq(this IServiceCollection services, IConfiguration configuration)
     {
         var settings = configuration.GetSection(nameof(RabbitMqSettings)).Get<RabbitMqSettings>()
             ?? new RabbitMqSettings();
 
+        // Lazy — only connects when first message is published
         services.AddSingleton<IConnection?>(_ =>
         {
             try
@@ -158,11 +146,10 @@ public static class ServiceExtensions
                 return new ConnectionFactory
                 {
                     HostName = settings.Host,
-                    Port = settings.Port,
+                    Port     = settings.Port,
                     UserName = settings.Username,
                     Password = settings.Password,
-                    DispatchConsumersAsync = true,
-                    RequestedConnectionTimeout = TimeSpan.FromSeconds(3)
+                    DispatchConsumersAsync = true
                 }.CreateConnection();
             }
             catch { return null; }
@@ -200,6 +187,7 @@ public static class ServiceExtensions
 
     private static IServiceCollection AddInfrastructureServices(this IServiceCollection services)
     {
+        // In-memory trackers for dev (Redis-backed ones require a live Redis connection on first use)
         services.AddSingleton<IUserPresenceService, RedisUserPresenceService>();
         services.AddSingleton<IUserTracker, SignalRUserTracker>();
         services.AddSingleton<IConnectionManager, SignalRConnectionManager>();

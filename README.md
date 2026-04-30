@@ -16,4 +16,3 @@ docker-compose -f scripts/docker-compose.yml up
 ```
 
 See [Deployment Guide](docs/Deployment_Guide.md) for more details.
-///////////////////////////
