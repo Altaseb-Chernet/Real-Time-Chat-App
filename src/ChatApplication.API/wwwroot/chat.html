@@ -1,66 +1,112 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>ChatApp</title>
-  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/app.css"/>
 </head>
 <body>
 
 <div class="chat-layout">
 
-  <!-- ── Left sidebar: rooms ─────────────────────────── -->
+  <!-- ── Sidebar ──────────────────────────────────────── -->
   <aside class="sidebar">
     <div class="sidebar-header">
-      <span><span class="logo-dot"></span>ChatApp</span>
-      <button class="btn btn-ghost" style="padding:.35rem .6rem;font-size:.8rem" onclick="openNewRoomModal()">+ Room</button>
+      <div class="sidebar-logo">
+        <span class="dot"></span>ChatApp
+      </div>
+      <button class="btn-icon" onclick="openNewRoomModal()" title="New room">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="section-label">
+      <span>Rooms</span>
     </div>
 
     <div class="room-list" id="room-list">
-      <div class="system-msg" style="padding:.75rem">Loading rooms…</div>
+      <div class="system-msg" style="padding:.5rem 0;font-size:.8rem">Loading…</div>
     </div>
 
     <div class="sidebar-footer">
-      <div class="avatar" id="user-avatar">?</div>
-      <div class="user-info">
-        <div class="name" id="user-name">—</div>
-        <div class="role" id="user-role">—</div>
+      <div class="avatar" id="user-avatar">?
+        <span class="status-badge online" id="my-status-badge"></span>
       </div>
-      <button class="btn btn-ghost" style="padding:.3rem .5rem;font-size:.75rem" onclick="logout()" title="Sign out">⏻</button>
+      <div class="user-info">
+        <div class="name"  id="user-name">—</div>
+        <div class="email" id="user-email">—</div>
+      </div>
+      <button class="btn-icon danger" onclick="logout()" title="Sign out">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </button>
     </div>
   </aside>
 
-  <!-- ── Main chat area ──────────────────────────────── -->
+  <!-- ── Main ─────────────────────────────────────────── -->
   <main class="chat-main">
+
     <!-- No room selected -->
     <div class="empty-state" id="no-room-state">
-      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
       </svg>
-      <p>Select a room to start chatting</p>
+      <h3>No room selected</h3>
+      <p>Pick a room from the sidebar or create a new one to start chatting with your friends.</p>
+      <button class="btn btn-primary" style="width:auto;margin-top:.5rem" onclick="openNewRoomModal()">
+        + Create a Room
+      </button>
     </div>
 
     <!-- Active room -->
-    <div id="active-room" style="display:none;flex-direction:column;height:100%">
+    <div id="active-room" style="display:none;flex-direction:column;height:100%;overflow:hidden">
+
       <div class="chat-header">
-        <div>
-          <div class="room-name"><span style="color:var(--accent)">#</span> <span id="active-room-name">—</span></div>
-          <div class="room-meta" id="active-room-meta"></div>
+        <div class="chat-header-left">
+          <div>
+            <div class="room-title">
+              <span class="hash">#</span>
+              <span id="active-room-name">—</span>
+            </div>
+            <div class="room-subtitle" id="active-room-meta"></div>
+          </div>
         </div>
-        <button class="btn btn-ghost" style="padding:.35rem .65rem;font-size:.8rem;color:var(--danger)" onclick="leaveCurrentRoom()">Leave</button>
+        <div class="chat-header-right">
+          <button class="btn-icon" onclick="loadMessages(currentRoomId)" title="Refresh">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <polyline points="23 4 23 10 17 10"/>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+          </button>
+          <button class="btn-icon danger" onclick="leaveCurrentRoom()" title="Leave room">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div class="messages-area" id="messages-area"></div>
 
-      <div class="typing-indicator" id="typing-indicator"></div>
+      <div class="typing-bar" id="typing-bar"></div>
 
       <div class="chat-input-area">
-        <div class="input-box">
-          <input type="text" id="msg-input" placeholder="Message #general…" autocomplete="off"
-                 onkeydown="handleInputKey(event)" oninput="handleTyping()" />
-          <button class="send-btn" id="send-btn" onclick="sendMessage()" title="Send">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+        <div class="input-wrapper">
+          <input type="text" id="msg-input"
+                 placeholder="Message #general…"
+                 autocomplete="off"
+                 onkeydown="handleInputKey(event)"
+                 oninput="handleTyping()"/>
+          <button class="send-btn" id="send-btn" onclick="sendMessage()" title="Send (Enter)">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
               <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
             </svg>
           </button>
@@ -69,21 +115,27 @@
     </div>
   </main>
 
-  <!-- ── Right panel: online users ──────────────────── -->
+  <!-- ── Presence panel ───────────────────────────────── -->
   <aside class="presence-panel">
-    <h3>Online — <span id="online-count">0</span></h3>
-    <div class="online-list" id="online-list"></div>
+    <div class="presence-header">
+      <span>Online</span>
+      <span class="online-count-badge" id="online-count">0</span>
+    </div>
+    <div class="online-list" id="online-list">
+      <div style="padding:.5rem;font-size:.78rem;color:var(--text-muted)">No one online yet</div>
+    </div>
   </aside>
 
 </div>
 
-<!-- New room modal -->
+<!-- ── New room modal ────────────────────────────────── -->
 <div class="modal-overlay" id="new-room-modal">
   <div class="modal">
     <h3>Create a Room</h3>
     <div class="form-group">
       <label>Room name</label>
-      <input type="text" id="new-room-name" placeholder="e.g. general" maxlength="50" />
+      <input type="text" id="new-room-name" placeholder="e.g. general" maxlength="50"
+             onkeydown="if(event.key==='Enter') createRoom()"/>
     </div>
     <div class="error-msg" id="room-error"></div>
     <div class="modal-actions">
@@ -93,10 +145,10 @@
   </div>
 </div>
 
-<!-- Toast -->
-<div class="toast" id="toast"></div>
+<!-- ── Toast container ──────────────────────────────── -->
+<div class="toast-container" id="toast-container"></div>
 
-<!-- SignalR client from CDN -->
+<!-- SignalR -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
 <script src="/js/chat.js"></script>
 </body>

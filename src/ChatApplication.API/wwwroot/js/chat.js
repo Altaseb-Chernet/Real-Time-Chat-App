@@ -1,132 +1,128 @@
 // ── Auth guard ────────────────────────────────────────────
 const token    = localStorage.getItem('token');
-const userId   = localStorage.getItem('userId');
-const username = localStorage.getItem('username');
+const myUserId = localStorage.getItem('userId');
+const myName   = localStorage.getItem('username');
 
-if (!token) { window.location.href = '/'; }
+if (!token) { location.href = '/'; }
 
 // ── State ─────────────────────────────────────────────────
-let connection      = null;
-let currentRoomId   = null;
-let currentRoomName = null;
-let typingTimer     = null;
-let typingUsers     = new Set();
+let hub           = null;
+let currentRoomId = null;
+let typingTimer   = null;
+let typingUsers   = {};          // userId → username
+let lastMsgAuthor = null;        // for grouping consecutive messages
+let unreadCounts  = {};          // roomId → count
 
-// ── API helper ────────────────────────────────────────────
-async function api(path, options = {}) {
+// ── API ───────────────────────────────────────────────────
+async function api(path, opts = {}) {
   const res = await fetch(path, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      ...(options.headers || {})
-    }
+    ...opts,
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...(opts.headers || {}) }
   });
   if (res.status === 401) { logout(); return null; }
-  if (res.status === 204)  return null;
+  if (res.status === 204) return null;
   return res.json();
 }
 
-// ── Init ──────────────────────────────────────────────────
+// ── Boot ──────────────────────────────────────────────────
 async function init() {
-  renderUserInfo();
+  renderSelf();
   await loadRooms();
-  await connectSignalR();
+  await connectHub();
   await loadOnlineUsers();
 }
 
-function renderUserInfo() {
-  const initial = (username || '?')[0].toUpperCase();
-  document.getElementById('user-avatar').textContent = initial;
-  document.getElementById('user-name').textContent   = username || '—';
-  document.getElementById('user-role').textContent   = 'Member';
+function renderSelf() {
+  document.getElementById('user-avatar').textContent = (myName || '?')[0].toUpperCase();
+  document.getElementById('user-avatar').style.position = 'relative';
+  document.getElementById('user-name').textContent  = myName || '—';
+  document.getElementById('user-email').textContent = localStorage.getItem('email') || '';
 }
 
 // ── Rooms ─────────────────────────────────────────────────
 async function loadRooms() {
   const data = await api('/api/chat/rooms');
   if (!data) return;
-  const rooms = data.data || [];
-  renderRooms(rooms);
+  renderRooms(data.data || []);
 }
 
 function renderRooms(rooms) {
   const list = document.getElementById('room-list');
   if (!rooms.length) {
-    list.innerHTML = '<div class="system-msg" style="padding:.75rem">No rooms yet. Create one!</div>';
+    list.innerHTML = `<div style="padding:.75rem .5rem;font-size:.8rem;color:var(--text-muted)">No rooms yet — create one!</div>`;
     return;
   }
-  list.innerHTML = rooms.map(r => `
-    <div class="room-item ${r.id === currentRoomId ? 'active' : ''}"
-         id="room-${r.id}"
-         onclick="selectRoom('${r.id}', '${escHtml(r.name)}')">
-      <span class="hash">#</span>${escHtml(r.name)}
-    </div>
-  `).join('');
+  list.innerHTML = rooms.map(r => {
+    const unread = unreadCounts[r.id] || 0;
+    return `
+      <div class="room-item ${r.id === currentRoomId ? 'active' : ''}" id="room-${r.id}"
+           onclick="selectRoom('${r.id}','${escHtml(r.name)}')">
+        <span class="room-hash">#</span>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.name)}</span>
+        ${unread ? `<span class="room-unread">${unread}</span>` : ''}
+      </div>`;
+  }).join('');
 }
 
 async function selectRoom(roomId, roomName) {
   if (currentRoomId === roomId) return;
 
   // Leave previous SignalR group
-  if (currentRoomId && connection) {
-    await connection.invoke('LeaveRoom', currentRoomId).catch(() => {});
+  if (currentRoomId && hub) {
+    hub.invoke('LeaveRoom', currentRoomId).catch(() => {});
   }
 
-  currentRoomId   = roomId;
-  currentRoomName = roomName;
+  currentRoomId = roomId;
+  lastMsgAuthor = null;
+  unreadCounts[roomId] = 0;
 
-  // Update UI
+  // Update sidebar
   document.querySelectorAll('.room-item').forEach(el => el.classList.remove('active'));
-  const roomEl = document.getElementById(`room-${roomId}`);
-  if (roomEl) roomEl.classList.add('active');
+  document.getElementById(`room-${roomId}`)?.classList.add('active');
 
-  document.getElementById('no-room-state').style.display  = 'none';
-  const activeRoom = document.getElementById('active-room');
-  activeRoom.style.display = 'flex';
+  // Show chat area
+  document.getElementById('no-room-state').style.display = 'none';
+  const ar = document.getElementById('active-room');
+  ar.style.display = 'flex';
 
   document.getElementById('active-room-name').textContent = roomName;
   document.getElementById('active-room-meta').textContent = '';
   document.getElementById('msg-input').placeholder = `Message #${roomName}…`;
+  document.getElementById('msg-input').focus();
 
   clearMessages();
   await loadMessages(roomId);
 
-  // Join SignalR group
-  if (connection) {
-    await connection.invoke('JoinRoom', roomId).catch(() => {});
-  }
+  if (hub) hub.invoke('JoinRoom', roomId).catch(() => {});
 }
 
 async function loadMessages(roomId) {
-  const data = await api(`/api/chat/rooms/${roomId}/messages?page=1&pageSize=50`);
+  if (!roomId) return;
+  const data = await api(`/api/chat/rooms/${roomId}/messages?page=1&pageSize=60`);
   if (!data?.data?.items) return;
-  const msgs = data.data.items;
-  msgs.forEach(m => appendMessage(m, false));
-  scrollToBottom();
+  clearMessages();
+  lastMsgAuthor = null;
+  data.data.items.forEach(m => appendMessage(m, false));
+  scrollToBottom(false);
 }
 
 function clearMessages() {
   document.getElementById('messages-area').innerHTML = '';
+  lastMsgAuthor = null;
 }
 
-// ── Send message ──────────────────────────────────────────
+// ── Send ──────────────────────────────────────────────────
 async function sendMessage() {
-  const input = document.getElementById('msg-input');
+  const input   = document.getElementById('msg-input');
   const content = input.value.trim();
   if (!content || !currentRoomId) return;
 
   input.value = '';
   stopTyping();
 
-  if (connection?.state === 'Connected') {
-    // Prefer SignalR for real-time delivery
-    await connection.invoke('SendMessage', currentRoomId, content).catch(async () => {
-      // Fallback to REST
-      await api(`/api/chat/rooms/${currentRoomId}/messages`, {
-        method: 'POST',
-        body: JSON.stringify({ content })
-      });
+  if (hub?.state === 'Connected') {
+    hub.invoke('SendMessage', currentRoomId, content).catch(async err => {
+      toast('Failed to send: ' + err.message, 'error');
     });
   } else {
     const data = await api(`/api/chat/rooms/${currentRoomId}/messages`, {
@@ -138,68 +134,73 @@ async function sendMessage() {
 }
 
 function handleInputKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 }
 
-// ── Typing indicator ──────────────────────────────────────
+// ── Typing ────────────────────────────────────────────────
 function handleTyping() {
-  if (!connection || !currentRoomId) return;
-  connection.invoke('TypingInRoom', currentRoomId).catch(() => {});
+  if (!hub || !currentRoomId) return;
+  hub.invoke('TypingInRoom', currentRoomId).catch(() => {});
   clearTimeout(typingTimer);
-  typingTimer = setTimeout(stopTyping, 2000);
+  typingTimer = setTimeout(stopTyping, 2500);
 }
 
 function stopTyping() {
-  if (!connection || !currentRoomId) return;
-  connection.invoke('StoppedTypingInRoom', currentRoomId).catch(() => {});
+  clearTimeout(typingTimer);
+  if (!hub || !currentRoomId) return;
+  hub.invoke('StoppedTypingInRoom', currentRoomId).catch(() => {});
 }
 
-function updateTypingIndicator() {
-  const el = document.getElementById('typing-indicator');
-  if (!typingUsers.size) { el.textContent = ''; return; }
-  const names = [...typingUsers].join(', ');
-  el.textContent = `${names} ${typingUsers.size === 1 ? 'is' : 'are'} typing…`;
+function updateTypingBar() {
+  const bar   = document.getElementById('typing-bar');
+  const names = Object.values(typingUsers);
+  if (!names.length) { bar.innerHTML = ''; return; }
+  const label = names.length === 1
+    ? `<strong>${escHtml(names[0])}</strong> is typing`
+    : `<strong>${names.length} people</strong> are typing`;
+  bar.innerHTML = `${label} <span class="typing-dots"><span></span><span></span><span></span></span>`;
 }
 
 // ── Render messages ───────────────────────────────────────
 function appendMessage(msg, scroll = true) {
-  const area = document.getElementById('messages-area');
-  const isMe = msg.senderId === userId;
+  const area  = document.getElementById('messages-area');
+  const isMe  = msg.senderId === myUserId;
   const time  = new Date(msg.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const initial = (msg.senderUsername || '?')[0].toUpperCase();
+  const init  = (msg.senderUsername || '?')[0].toUpperCase();
+  const cont  = lastMsgAuthor === msg.senderId;
+
+  lastMsgAuthor = msg.senderId;
 
   const div = document.createElement('div');
-  div.className = 'msg-group';
+  div.className = `msg-group${cont ? ' continued' : ''}`;
   div.id = `msg-${msg.id}`;
   div.innerHTML = `
-    <div class="avatar sm">${escHtml(initial)}</div>
+    <div class="avatar xs" style="margin-top:.2rem">${escHtml(init)}</div>
     <div class="msg-body">
       <div class="msg-meta">
-        <span class="msg-author ${isMe ? 'me' : ''}">${escHtml(msg.senderUsername)}</span>
+        <span class="msg-author${isMe ? ' me' : ''}">${escHtml(msg.senderUsername)}</span>
         <span class="msg-time">${time}</span>
       </div>
       <div class="msg-text">${escHtml(msg.content)}</div>
-    </div>
-  `;
+    </div>`;
+
   area.appendChild(div);
-  if (scroll) scrollToBottom();
+  if (scroll) scrollToBottom(true);
 }
 
-function appendSystemMessage(text) {
+function appendSystem(text) {
   const area = document.getElementById('messages-area');
-  const div = document.createElement('div');
+  const div  = document.createElement('div');
   div.className = 'system-msg';
   div.textContent = text;
   area.appendChild(div);
-  scrollToBottom();
+  scrollToBottom(true);
+  lastMsgAuthor = null;
 }
 
-function scrollToBottom() {
+function scrollToBottom(smooth = true) {
   const area = document.getElementById('messages-area');
-  area.scrollTop = area.scrollHeight;
+  area.scrollTo({ top: area.scrollHeight, behavior: smooth ? 'smooth' : 'instant' });
 }
 
 // ── Rooms CRUD ────────────────────────────────────────────
@@ -207,7 +208,7 @@ function openNewRoomModal() {
   document.getElementById('new-room-modal').classList.add('open');
   document.getElementById('new-room-name').value = '';
   document.getElementById('room-error').classList.remove('show');
-  setTimeout(() => document.getElementById('new-room-name').focus(), 50);
+  setTimeout(() => document.getElementById('new-room-name').focus(), 60);
 }
 
 function closeNewRoomModal() {
@@ -218,22 +219,18 @@ async function createRoom() {
   const name = document.getElementById('new-room-name').value.trim();
   if (!name) return;
 
-  const data = await api('/api/chat/rooms', {
-    method: 'POST',
-    body: JSON.stringify({ name })
-  });
-
+  const data = await api('/api/chat/rooms', { method: 'POST', body: JSON.stringify({ name }) });
   if (!data) return;
 
   if (!data.success) {
-    const errEl = document.getElementById('room-error');
-    errEl.textContent = data.message || 'Failed to create room.';
-    errEl.classList.add('show');
+    const err = document.getElementById('room-error');
+    err.textContent = data.message || 'Failed to create room.';
+    err.classList.add('show');
     return;
   }
 
   closeNewRoomModal();
-  showToast(`Room #${name} created!`, 'success');
+  toast(`Room #${name} created!`, 'success');
   await loadRooms();
   selectRoom(data.data.id, data.data.name);
 }
@@ -241,11 +238,12 @@ async function createRoom() {
 async function leaveCurrentRoom() {
   if (!currentRoomId) return;
   await api(`/api/chat/rooms/${currentRoomId}/leave`, { method: 'POST' });
-  if (connection) await connection.invoke('LeaveRoom', currentRoomId).catch(() => {});
+  if (hub) hub.invoke('LeaveRoom', currentRoomId).catch(() => {});
   currentRoomId = null;
   document.getElementById('no-room-state').style.display = '';
   document.getElementById('active-room').style.display   = 'none';
   await loadRooms();
+  toast('Left the room', 'info');
 }
 
 // ── Online users ──────────────────────────────────────────
@@ -256,137 +254,132 @@ async function loadOnlineUsers() {
 }
 
 function renderOnlineUsers(users) {
-  const list  = document.getElementById('online-list');
-  const count = document.getElementById('online-count');
-  count.textContent = users.length;
-
+  document.getElementById('online-count').textContent = users.length;
+  const list = document.getElementById('online-list');
   if (!users.length) {
-    list.innerHTML = '<div class="system-msg" style="padding:.5rem">No one online</div>';
+    list.innerHTML = `<div style="padding:.5rem;font-size:.78rem;color:var(--text-muted)">No one online yet</div>`;
     return;
   }
-
-  list.innerHTML = users.map(u => `
-    <div class="online-user">
-      <span class="status-dot ${u.status.toLowerCase()}"></span>
-      <span>${escHtml(u.username)}</span>
-    </div>
-  `).join('');
+  list.innerHTML = users.map(u => {
+    const init   = (u.username || '?')[0].toUpperCase();
+    const status = (u.status || 'online').toLowerCase();
+    return `
+      <div class="online-user">
+        <div class="avatar xs">${escHtml(init)}
+          <span class="status-badge ${status}"></span>
+        </div>
+        <span class="name">${escHtml(u.username)}</span>
+        <span class="status-text">${status}</span>
+      </div>`;
+  }).join('');
 }
 
 // ── SignalR ───────────────────────────────────────────────
-async function connectSignalR() {
-  connection = new signalR.HubConnectionBuilder()
+async function connectHub() {
+  hub = new signalR.HubConnectionBuilder()
     .withUrl('/hubs/chat', { accessTokenFactory: () => token })
-    .withAutomaticReconnect()
+    .withAutomaticReconnect([0, 2000, 5000, 10000])
     .configureLogging(signalR.LogLevel.Warning)
     .build();
 
-  // Incoming message
-  connection.on('ReceiveMessage', msg => {
+  // Room message
+  hub.on('ReceiveMessage', msg => {
     if (msg.roomId === currentRoomId) {
       appendMessage(msg, true);
+    } else {
+      // Increment unread badge
+      unreadCounts[msg.roomId] = (unreadCounts[msg.roomId] || 0) + 1;
+      loadRooms();
+      toast(`New message in #${msg.roomId.slice(0,6)}…`, 'info');
     }
   });
 
   // Private message
-  connection.on('ReceivePrivateMessage', msg => {
-    showToast(`DM from ${msg.senderUsername}: ${msg.content}`);
+  hub.on('ReceivePrivateMessage', msg => {
+    toast(`💬 ${msg.senderUsername}: ${msg.content.slice(0, 60)}`, 'info');
   });
 
-  // User joined / left room
-  connection.on('UserJoinedRoom', ({ userId: uid, roomId }) => {
-    if (roomId === currentRoomId && uid !== userId) {
-      appendSystemMessage(`A user joined the room.`);
-    }
+  // Join / leave
+  hub.on('UserJoinedRoom', ({ userId, roomId }) => {
+    if (roomId === currentRoomId && userId !== myUserId)
+      appendSystem('Someone joined the room');
   });
 
-  connection.on('UserLeftRoom', ({ userId: uid, roomId }) => {
-    if (roomId === currentRoomId && uid !== userId) {
-      appendSystemMessage(`A user left the room.`);
-    }
+  hub.on('UserLeftRoom', ({ userId, roomId }) => {
+    if (roomId === currentRoomId && userId !== myUserId)
+      appendSystem('Someone left the room');
   });
 
   // Presence
-  connection.on('UserOnline', uid => {
-    loadOnlineUsers();
-  });
-
-  connection.on('UserOffline', uid => {
-    loadOnlineUsers();
-  });
+  hub.on('UserOnline',  () => loadOnlineUsers());
+  hub.on('UserOffline', () => loadOnlineUsers());
 
   // Typing
-  connection.on('UserTyping', ({ userId: uid }) => {
-    if (uid === userId) return;
-    typingUsers.add(uid);
-    updateTypingIndicator();
+  hub.on('UserTyping', ({ userId, roomId }) => {
+    if (roomId !== currentRoomId || userId === myUserId) return;
+    typingUsers[userId] = userId;
+    updateTypingBar();
   });
 
-  connection.on('UserStoppedTyping', ({ userId: uid }) => {
-    typingUsers.delete(uid);
-    updateTypingIndicator();
+  hub.on('UserStoppedTyping', ({ userId }) => {
+    delete typingUsers[userId];
+    updateTypingBar();
   });
 
-  connection.onreconnected(() => {
-    showToast('Reconnected', 'success');
-    if (currentRoomId) connection.invoke('JoinRoom', currentRoomId).catch(() => {});
+  hub.onreconnecting(() => toast('Reconnecting…', 'info'));
+  hub.onreconnected(() => {
+    toast('Connected', 'success');
+    if (currentRoomId) hub.invoke('JoinRoom', currentRoomId).catch(() => {});
+    loadOnlineUsers();
   });
-
-  connection.onclose(() => showToast('Disconnected from server', 'error'));
+  hub.onclose(() => toast('Disconnected', 'error'));
 
   try {
-    await connection.start();
-  } catch (e) {
-    showToast('Could not connect to real-time server', 'error');
+    await hub.start();
+    toast('Connected', 'success');
+  } catch {
+    toast('Real-time unavailable — using REST fallback', 'info');
   }
-}
-
-// ── Presence hub (separate connection) ───────────────────
-async function connectPresenceHub() {
-  const presenceConn = new signalR.HubConnectionBuilder()
-    .withUrl('/hubs/presence', { accessTokenFactory: () => token })
-    .withAutomaticReconnect()
-    .configureLogging(signalR.LogLevel.Warning)
-    .build();
-
-  presenceConn.on('OnlineUsers', users => renderOnlineUsers(users));
-  presenceConn.on('UserOnline',  ()    => loadOnlineUsers());
-  presenceConn.on('UserOffline', ()    => loadOnlineUsers());
-
-  try { await presenceConn.start(); } catch { /* non-critical */ }
 }
 
 // ── Logout ────────────────────────────────────────────────
 function logout() {
+  if (hub) hub.stop().catch(() => {});
   localStorage.clear();
-  window.location.href = '/';
+  location.href = '/';
 }
 
 // ── Toast ─────────────────────────────────────────────────
-function showToast(msg, type = '') {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = `toast ${type} show`;
-  setTimeout(() => el.classList.remove('show'), 3000);
+const _toastTimers = {};
+function toast(msg, type = 'info') {
+  const container = document.getElementById('toast-container');
+  const id  = Date.now();
+  const el  = document.createElement('div');
+  const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ';
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span class="toast-icon">${icon}</span><span>${escHtml(msg)}</span>`;
+  container.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  _toastTimers[id] = setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => el.remove(), 350);
+  }, 3500);
 }
 
-// ── Escape HTML ───────────────────────────────────────────
-function escHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+// ── Helpers ───────────────────────────────────────────────
+function escHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// ── Modal keyboard close ──────────────────────────────────
+// Modal keyboard
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeNewRoomModal();
 });
-
 document.getElementById('new-room-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeNewRoomModal();
 });
 
-// ── Boot ──────────────────────────────────────────────────
-init().then(() => connectPresenceHub());
+// ── Start ─────────────────────────────────────────────────
+init();
