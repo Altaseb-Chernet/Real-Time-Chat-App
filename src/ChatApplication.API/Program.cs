@@ -30,18 +30,8 @@ builder.Services.AddApplicationServices(builder.Configuration);
 
 var app = builder.Build();
 
-// Try to create DB schema — log and continue if DB is unavailable
-try
-{
-    await using var scope = app.Services.CreateAsyncScope();
-    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    await db.Database.EnsureCreatedAsync();
-}
-catch (Exception ex)
-{
-    var logger = app.Services.GetRequiredService<ILogger<Program>>();
-    logger.LogWarning("Database not available on startup: {Message}", ex.Message);
-}
+// Tables already created via pgAdmin — skip EnsureCreatedAsync
+// (it runs a slow schema introspection query when tables exist)
 
 // Swagger always enabled so you can browse the API
 app.UseSwagger();
@@ -65,3 +55,5 @@ app.MapHub<PresenceHub>("/hubs/presence");
 
 // Fallback: any unknown route → index.html (SPA-style)
 app.MapFallbackToFile("index.html");
+
+app.Run();

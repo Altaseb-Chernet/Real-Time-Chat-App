@@ -27,128 +27,110 @@ public static class ServiceExtensions
 {
     public static IServiceCollection AddApplicationServices(this IServiceCollection services, IConfiguration configuration)
     {
-        services
-            .AddSettings(configuration)
-            .AddDatabase(configuration)
-            .AddRedis(configuration)
-            .AddJwtAuthentication(configuration)
-            .AddSignalR()   // in-memory only — no Redis backplane during dev
-            .Services
-            .AddRabbitMq(configuration)
-            .AddRepositories()
-            .AddCoreServices()
-            .AddInfrastructureServices();
-
+        AddSettings(services, configuration);
+        AddDatabase(services, configuration);
+        AddJwtAuthentication(services, configuration);
+        services.AddSignalR();
+        AddRedisLazy(services, configuration);
+        AddRabbitMqLazy(services, configuration);
+        AddRepositories(services);
+        AddCoreServices(services);
+        AddInfrastructureServices(services);
         return services;
     }
 
-    private static IServiceCollection AddSettings(this IServiceCollection services, IConfiguration configuration)
+    private static void AddSettings(IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<JwtSettings>(configuration.GetSection(nameof(JwtSettings)));
         services.Configure<RedisSettings>(configuration.GetSection(nameof(RedisSettings)));
         services.Configure<RabbitMqSettings>(configuration.GetSection(nameof(RabbitMqSettings)));
-        return services;
     }
 
-    private static IServiceCollection AddDatabase(this IServiceCollection services, IConfiguration configuration)
+    private static void AddDatabase(IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("DefaultConnection")
-            ?? throw new InvalidOperationException("Connection string 'DefaultConnection' is not configured.");
+        var cs = configuration.GetConnectionString("DefaultConnection")
+            ?? throw new InvalidOperationException("DefaultConnection not configured.");
 
-        services.AddDbContext<ApplicationDbContext>(options =>
-            options.UseNpgsql(connectionString, npgsql =>
-            {
-                npgsql.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(5), errorCodesToAdd: null);
-                npgsql.MigrationsAssembly("ChatApplication.Infrastructure");
-            }));
-
-        return services;
+        services.AddDbContext<ApplicationDbContext>(o =>
+            o.UseNpgsql(cs, n => n.MigrationsAssembly("ChatApplication.Infrastructure")));
     }
 
-    private static IServiceCollection AddRedis(this IServiceCollection services, IConfiguration configuration)
+    private static void AddJwtAuthentication(IServiceCollection services, IConfiguration configuration)
     {
-        var cs = configuration
-            .GetSection(nameof(RedisSettings))
-            .GetValue<string>(nameof(RedisSettings.ConnectionString))
-            ?? "localhost:6379";
+        var jwt = configuration.GetSection(nameof(JwtSettings)).Get<JwtSettings>()
+            ?? throw new InvalidOperationException("JwtSettings not configured.");
 
-        // Lazy singleton — connection is created on first actual use, not at startup
-        services.AddSingleton<IConnectionMultiplexer>(_ =>
+        var key = Encoding.UTF8.GetBytes(jwt.Secret);
+
+        services.AddAuthentication(o =>
         {
-            var opts = ConfigurationOptions.Parse(cs);
-            opts.AbortOnConnectFail = false;
-            opts.ConnectTimeout    = 1000;
-            opts.SyncTimeout       = 1000;
-            return ConnectionMultiplexer.Connect(opts);
-        });
-
-        services.AddSingleton<RedisConnection>();
-        services.AddSingleton<RedisBackplaneService>();
-        services.AddScoped<ICacheService, RedisCacheService>();
-
-        return services;
-    }
-
-    private static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)
-    {
-        var jwtSettings = configuration.GetSection(nameof(JwtSettings)).Get<JwtSettings>()
-            ?? throw new InvalidOperationException("JwtSettings are not configured.");
-
-        var key = Encoding.UTF8.GetBytes(jwtSettings.Secret);
-
-        services.AddAuthentication(options =>
-        {
-            options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-            options.DefaultChallengeScheme    = JwtBearerDefaults.AuthenticationScheme;
+            o.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+            o.DefaultChallengeScheme    = JwtBearerDefaults.AuthenticationScheme;
         })
-        .AddJwtBearer(options =>
+        .AddJwtBearer(o =>
         {
-            options.TokenValidationParameters = new TokenValidationParameters
+            o.TokenValidationParameters = new TokenValidationParameters
             {
                 ValidateIssuer           = true,
                 ValidateAudience         = true,
                 ValidateLifetime         = true,
                 ValidateIssuerSigningKey = true,
-                ValidIssuer              = jwtSettings.Issuer,
-                ValidAudience            = jwtSettings.Audience,
+                ValidIssuer              = jwt.Issuer,
+                ValidAudience            = jwt.Audience,
                 IssuerSigningKey         = new SymmetricSecurityKey(key),
                 ClockSkew                = TimeSpan.Zero
             };
-
-            // Allow JWT from SignalR query string
-            options.Events = new JwtBearerEvents
+            o.Events = new JwtBearerEvents
             {
-                OnMessageReceived = context =>
+                OnMessageReceived = ctx =>
                 {
-                    var accessToken = context.Request.Query["access_token"];
-                    var path = context.HttpContext.Request.Path;
-                    if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
-                        context.Token = accessToken;
+                    var t = ctx.Request.Query["access_token"];
+                    if (!string.IsNullOrEmpty(t) && ctx.HttpContext.Request.Path.StartsWithSegments("/hubs"))
+                        ctx.Token = t;
                     return Task.CompletedTask;
                 }
             };
         });
 
         services.AddAuthorization();
-        return services;
     }
 
-    private static IServiceCollection AddRabbitMq(this IServiceCollection services, IConfiguration configuration)
+    private static void AddRedisLazy(IServiceCollection services, IConfiguration configuration)
     {
-        var settings = configuration.GetSection(nameof(RabbitMqSettings)).Get<RabbitMqSettings>()
+        var cs = configuration
+            .GetSection(nameof(RedisSettings))
+            .GetValue<string>(nameof(RedisSettings.ConnectionString))
+            ?? "localhost:6379";
+
+        // Factory only runs on first actual use — never at startup
+        services.AddSingleton<IConnectionMultiplexer>(_ =>
+        {
+            var opts = ConfigurationOptions.Parse(cs);
+            opts.AbortOnConnectFail = false;
+            opts.ConnectTimeout     = 3000;
+            return ConnectionMultiplexer.Connect(opts);
+        });
+
+        services.AddSingleton<RedisConnection>();
+        services.AddSingleton<RedisBackplaneService>();
+        services.AddScoped<ICacheService, RedisCacheService>();
+    }
+
+    private static void AddRabbitMqLazy(IServiceCollection services, IConfiguration configuration)
+    {
+        var s = configuration.GetSection(nameof(RabbitMqSettings)).Get<RabbitMqSettings>()
             ?? new RabbitMqSettings();
 
-        // Lazy — only connects when first message is published
         services.AddSingleton<IConnection?>(_ =>
         {
             try
             {
                 return new ConnectionFactory
                 {
-                    HostName = settings.Host,
-                    Port     = settings.Port,
-                    UserName = settings.Username,
-                    Password = settings.Password,
+                    HostName               = s.Host,
+                    Port                   = s.Port,
+                    UserName               = s.Username,
+                    Password               = s.Password,
                     DispatchConsumersAsync = true
                 }.CreateConnection();
             }
@@ -158,22 +140,16 @@ public static class ServiceExtensions
         services.AddSingleton<RabbitMqConnection>();
         services.AddScoped<IMessagePublisher, MessagePublisher>();
         services.AddScoped<IMessageSubscriber, MessageSubscriber>();
-
-        return services;
     }
 
-    private static IServiceCollection AddRepositories(this IServiceCollection services)
+    private static void AddRepositories(IServiceCollection services)
     {
-        services.AddScoped<UserRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IMessageRepository, MessageRepository>();
-        services.AddScoped<MessageRepository>();
         services.AddScoped<IChatRoomRepository, ChatRoomRepository>();
-        services.AddScoped<ChatRoomRepository>();
-        return services;
     }
 
-    private static IServiceCollection AddCoreServices(this IServiceCollection services)
+    private static void AddCoreServices(IServiceCollection services)
     {
         services.AddScoped<LoginRequestValidator>();
         services.AddScoped<RegisterRequestValidator>();
@@ -182,15 +158,12 @@ public static class ServiceExtensions
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IMessageService, MessageService>();
         services.AddScoped<IChatRoomService, ChatRoomService>();
-        return services;
     }
 
-    private static IServiceCollection AddInfrastructureServices(this IServiceCollection services)
+    private static void AddInfrastructureServices(IServiceCollection services)
     {
-        // In-memory trackers for dev (Redis-backed ones require a live Redis connection on first use)
-        services.AddSingleton<IUserPresenceService, RedisUserPresenceService>();
-        services.AddSingleton<IUserTracker, SignalRUserTracker>();
-        services.AddSingleton<IConnectionManager, SignalRConnectionManager>();
-        return services;
-    }
-}
+        // Pure in-memory — zero network calls, works without Redis
+        services.AddSingleton<IUserPresenceService, InMemoryPresenceService>();
+        services.AddSingleton<IUserTracker, InMemoryUserTracker>();
+        services.AddSingleton<IConnectionManager, InMemoryConnectionManager>();
+    }}
