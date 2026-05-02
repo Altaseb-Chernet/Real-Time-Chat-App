@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   api:
@@ -6,9 +5,12 @@ services:
       context: ..
       dockerfile: scripts/Dockerfile
     ports:
-      - "5000:80"
+      - "5000:5000"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=chatapp;Username=chatuser;Password=chatpassword;Include Error Detail=true
+      - RedisSettings__ConnectionString=redis:6379
+      - RabbitMqSettings__Host=rabbitmq
     depends_on:
       - postgres
       - redis
