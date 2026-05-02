@@ -68,20 +68,20 @@ public class ChatHub : Hub
     // Room operations
     // -------------------------------------------------------------------------
 
-    /// <summary>Join a SignalR group for a chat room and persist membership.</summary>
+    /// <summary>Join a SignalR group for a chat room and persist DB membership.</summary>
     public async Task JoinRoom(string roomId)
     {
         var userId = GetUserId();
 
-        var room = await _chatRoomService.GetRoomAsync(roomId)
-            ?? throw new HubException($"Room '{roomId}' not found.");
+        // Persist membership in DB (no-op if already a member)
+        await _chatRoomService.JoinRoomAsync(roomId, userId);
 
         await Groups.AddToGroupAsync(Context.ConnectionId, RoomGroup(roomId));
 
         await Clients.Group(RoomGroup(roomId)).SendAsync(HubEvents.UserJoinedRoom, new
         {
-            UserId = userId,
-            RoomId = roomId,
+            UserId    = userId,
+            RoomId    = roomId,
             Timestamp = DateTime.UtcNow
         });
     }
