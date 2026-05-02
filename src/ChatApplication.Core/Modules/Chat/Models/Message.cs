@@ -9,6 +9,8 @@ public class Message : BaseEntity
     public string RoomId { get; set; } = string.Empty;
     public DateTime SentAt { get; set; }
     public bool IsDeleted { get; set; }
+    public bool IsEdited { get; set; }
+    public DateTime? EditedAt { get; set; }
 
     // Navigation properties
     public AppUser? Sender { get; set; }
