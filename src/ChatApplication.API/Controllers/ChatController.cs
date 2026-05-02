@@ -135,6 +135,18 @@ public class ChatController : ControllerBase
         return StatusCode(StatusCodes.Status201Created, ApiResponse<MessageResponse>.Ok(response));
     }
 
+    /// <summary>Edit a message (sender only).</summary>
+    [HttpPut("messages/{messageId}")]
+    [ProducesResponseType(typeof(ApiResponse<MessageResponse>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> EditMessage(string messageId, [FromBody] EditMessageBody body)
+    {
+        var userId   = GetUserId();
+        var response = await _messageService.EditMessageAsync(messageId, userId, body.Content);
+        return Ok(ApiResponse<MessageResponse>.Ok(response));
+    }
+
     /// <summary>Soft-delete a message (sender only).</summary>
     [HttpDelete("messages/{messageId}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -178,6 +190,11 @@ public class CreateRoomRequest
 public class SendMessageBody
 {
     /// <example>Hello everyone!</example>
+    public string Content { get; set; } = string.Empty;
+}
+
+public class EditMessageBody
+{
     public string Content { get; set; } = string.Empty;
 }
 

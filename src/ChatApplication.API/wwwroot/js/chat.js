@@ -2,16 +2,24 @@
 const token    = localStorage.getItem('token');
 const myUserId = localStorage.getItem('userId');
 const myName   = localStorage.getItem('username');
-
 if (!token) { location.href = '/'; }
 
 // ── State ─────────────────────────────────────────────────
 let hub           = null;
 let currentRoomId = null;
 let typingTimer   = null;
-let typingUsers   = {};          // userId → username
-let lastMsgAuthor = null;        // for grouping consecutive messages
-let unreadCounts  = {};          // roomId → count
+let typingUsers   = {};
+let lastAuthorId  = null;   // for bubble grouping
+let unreadCounts  = {};
+
+// Edit state
+let editingMsgId      = null;
+let editingMsgContent = null;
+
+// Context menu state
+let ctxMsgId      = null;
+let ctxMsgContent = null;
+let ctxIsMe       = false;
 
 // ── API ───────────────────────────────────────────────────
 async function api(path, opts = {}) {
@@ -33,10 +41,9 @@ async function init() {
 }
 
 function renderSelf() {
-  document.getElementById('user-avatar').textContent = (myName || '?')[0].toUpperCase();
-  document.getElementById('user-avatar').style.position = 'relative';
-  document.getElementById('user-name').textContent  = myName || '—';
-  document.getElementById('user-email').textContent = localStorage.getItem('email') || '';
+  const av = document.getElementById('user-avatar');
+  av.childNodes[0].textContent = (myName || '?')[0].toUpperCase();
+  document.getElementById('user-name').textContent = myName || '—';
 }
 
 // ── Rooms ─────────────────────────────────────────────────
@@ -53,91 +60,131 @@ function renderRooms(rooms) {
     return;
   }
   list.innerHTML = rooms.map(r => {
-    const unread = unreadCounts[r.id] || 0;
-    return `
-      <div class="room-item ${r.id === currentRoomId ? 'active' : ''}" id="room-${r.id}"
-           onclick="selectRoom('${r.id}','${escHtml(r.name)}')">
-        <span class="room-hash">#</span>
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.name)}</span>
-        ${unread ? `<span class="room-unread">${unread}</span>` : ''}
-      </div>`;
+    const u = unreadCounts[r.id] || 0;
+    return `<div class="room-item ${r.id === currentRoomId ? 'active' : ''}" id="room-${r.id}"
+         onclick="selectRoom('${r.id}','${escHtml(r.name)}')">
+      <span class="room-hash">#</span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(r.name)}</span>
+      ${u ? `<span class="room-unread">${u}</span>` : ''}
+    </div>`;
   }).join('');
 }
 
 async function selectRoom(roomId, roomName) {
   if (currentRoomId === roomId) return;
-
-  // Leave previous SignalR group
-  if (currentRoomId && hub) {
-    hub.invoke('LeaveRoom', currentRoomId).catch(() => {});
-  }
+  if (currentRoomId && hub) hub.invoke('LeaveRoom', currentRoomId).catch(() => {});
 
   currentRoomId = roomId;
-  lastMsgAuthor = null;
+  lastAuthorId  = null;
   unreadCounts[roomId] = 0;
+  cancelEdit();
 
-  // Update sidebar
   document.querySelectorAll('.room-item').forEach(el => el.classList.remove('active'));
   document.getElementById(`room-${roomId}`)?.classList.add('active');
 
-  // Show chat area
   document.getElementById('no-room-state').style.display = 'none';
   const ar = document.getElementById('active-room');
   ar.style.display = 'flex';
 
   document.getElementById('active-room-name').textContent = roomName;
-  document.getElementById('active-room-meta').textContent = '';
   document.getElementById('msg-input').placeholder = `Message #${roomName}…`;
   document.getElementById('msg-input').focus();
 
   clearMessages();
   await loadMessages(roomId);
-
   if (hub) hub.invoke('JoinRoom', roomId).catch(() => {});
 }
 
 async function loadMessages(roomId) {
   if (!roomId) return;
-  const data = await api(`/api/chat/rooms/${roomId}/messages?page=1&pageSize=60`);
+  const data = await api(`/api/chat/rooms/${roomId}/messages?page=1&pageSize=80`);
   if (!data?.data?.items) return;
   clearMessages();
-  lastMsgAuthor = null;
+  lastAuthorId = null;
   data.data.items.forEach(m => appendMessage(m, false));
   scrollToBottom(false);
 }
 
 function clearMessages() {
   document.getElementById('messages-area').innerHTML = '';
-  lastMsgAuthor = null;
+  lastAuthorId = null;
 }
 
-// ── Send ──────────────────────────────────────────────────
+// ── Send / Edit ───────────────────────────────────────────
+async function sendOrEdit() {
+  if (editingMsgId) { await submitEdit(); }
+  else              { await sendMessage(); }
+}
+
 async function sendMessage() {
   const input   = document.getElementById('msg-input');
   const content = input.value.trim();
   if (!content || !currentRoomId) return;
-
   input.value = '';
   stopTyping();
 
   if (hub?.state === 'Connected') {
-    hub.invoke('SendMessage', currentRoomId, content).catch(async err => {
-      toast('Failed to send: ' + err.message, 'error');
-    });
+    hub.invoke('SendMessage', currentRoomId, content).catch(err => toast('Send failed: ' + err.message, 'error'));
   } else {
     const data = await api(`/api/chat/rooms/${currentRoomId}/messages`, {
-      method: 'POST',
-      body: JSON.stringify({ content })
+      method: 'POST', body: JSON.stringify({ content })
     });
     if (data?.data) appendMessage(data.data, true);
   }
 }
 
-function handleInputKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+// ── Edit ──────────────────────────────────────────────────
+function startEdit(msgId, content) {
+  editingMsgId      = msgId;
+  editingMsgContent = content;
+  const input = document.getElementById('msg-input');
+  input.value = content;
+  input.focus();
+  document.getElementById('edit-preview').textContent = content.slice(0, 40) + (content.length > 40 ? '…' : '');
+  document.getElementById('edit-banner').classList.add('show');
+  closeCtxMenu();
 }
 
-// ── Typing ────────────────────────────────────────────────
+function cancelEdit() {
+  editingMsgId = null;
+  editingMsgContent = null;
+  document.getElementById('msg-input').value = '';
+  document.getElementById('edit-banner').classList.remove('show');
+}
+
+async function submitEdit() {
+  const input   = document.getElementById('msg-input');
+  const content = input.value.trim();
+  if (!content || !editingMsgId) return;
+
+  const msgId = editingMsgId;
+  cancelEdit();
+
+  const data = await api(`/api/chat/messages/${msgId}`, {
+    method: 'PUT', body: JSON.stringify({ content })
+  });
+
+  if (data?.data) {
+    updateMessageInDOM(data.data);
+    toast('Message edited', 'success');
+  }
+}
+
+// ── Delete ────────────────────────────────────────────────
+async function deleteMessage(msgId) {
+  const data = await api(`/api/chat/messages/${msgId}`, { method: 'DELETE' });
+  // 204 = success
+  markDeletedInDOM(msgId);
+  toast('Message deleted', 'info');
+  closeCtxMenu();
+}
+
+// ── Input handlers ────────────────────────────────────────
+function handleInputKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendOrEdit(); }
+  if (e.key === 'Escape' && editingMsgId) cancelEdit();
+}
+
 function handleTyping() {
   if (!hub || !currentRoomId) return;
   hub.invoke('TypingInRoom', currentRoomId).catch(() => {});
@@ -158,34 +205,82 @@ function updateTypingBar() {
   const label = names.length === 1
     ? `<strong>${escHtml(names[0])}</strong> is typing`
     : `<strong>${names.length} people</strong> are typing`;
-  bar.innerHTML = `${label} <span class="typing-dots"><span></span><span></span><span></span></span>`;
+  bar.innerHTML = `${label}&nbsp;<span class="typing-dots"><span></span><span></span><span></span></span>`;
 }
 
 // ── Render messages ───────────────────────────────────────
 function appendMessage(msg, scroll = true) {
   const area  = document.getElementById('messages-area');
   const isMe  = msg.senderId === myUserId;
+  const cont  = lastAuthorId === msg.senderId;
+  lastAuthorId = msg.senderId;
+
   const time  = new Date(msg.sentAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const init  = (msg.senderUsername || '?')[0].toUpperCase();
-  const cont  = lastMsgAuthor === msg.senderId;
 
-  lastMsgAuthor = msg.senderId;
+  const row = document.createElement('div');
+  row.className = `msg-row ${isMe ? 'me' : 'other'}${cont ? ' continued' : ''}`;
+  row.id = `msg-${msg.id}`;
+  row.dataset.msgId      = msg.id;
+  row.dataset.content    = msg.content;
+  row.dataset.isMe       = isMe ? '1' : '0';
+  row.dataset.senderId   = msg.senderId;
 
-  const div = document.createElement('div');
-  div.className = `msg-group${cont ? ' continued' : ''}`;
-  div.id = `msg-${msg.id}`;
-  div.innerHTML = `
-    <div class="avatar xs" style="margin-top:.2rem">${escHtml(init)}</div>
-    <div class="msg-body">
-      <div class="msg-meta">
-        <span class="msg-author${isMe ? ' me' : ''}">${escHtml(msg.senderUsername)}</span>
-        <span class="msg-time">${time}</span>
+  const editedTag = msg.isEdited ? `<span class="edited-tag">edited</span>` : '';
+  const bodyText  = msg.isDeleted
+    ? `<span class="deleted-bubble">🚫 This message was deleted</span>`
+    : escHtml(msg.content);
+
+  row.innerHTML = `
+    <div class="avatar sm">${escHtml(init)}</div>
+    <div class="bubble-wrap">
+      <div class="bubble-name">${escHtml(msg.senderUsername)}</div>
+      <div class="bubble" oncontextmenu="openCtxMenu(event,'${msg.id}',this)">${bodyText}</div>
+      <div class="bubble-meta">
+        ${editedTag}
+        <span class="bubble-time">${time}</span>
       </div>
-      <div class="msg-text">${escHtml(msg.content)}</div>
+    </div>
+    <div class="msg-actions">
+      ${!msg.isDeleted && isMe ? `
+        <button class="action-btn" onclick="startEdit('${msg.id}', document.getElementById('msg-${msg.id}').dataset.content)" title="Edit">✏️</button>
+      ` : ''}
+      <button class="action-btn" onclick="copyText(document.getElementById('msg-${msg.id}').dataset.content)" title="Copy">📋</button>
+      ${!msg.isDeleted && isMe ? `
+        <button class="action-btn del" onclick="deleteMessage('${msg.id}')" title="Delete">🗑️</button>
+      ` : ''}
     </div>`;
 
-  area.appendChild(div);
+  area.appendChild(row);
   if (scroll) scrollToBottom(true);
+}
+
+function updateMessageInDOM(msg) {
+  const row = document.getElementById(`msg-${msg.id}`);
+  if (!row) return;
+  row.dataset.content = msg.content;
+  const bubble = row.querySelector('.bubble');
+  if (bubble) bubble.textContent = msg.content;
+  const meta = row.querySelector('.bubble-meta');
+  if (meta && msg.isEdited) {
+    if (!meta.querySelector('.edited-tag')) {
+      const tag = document.createElement('span');
+      tag.className = 'edited-tag';
+      tag.textContent = 'edited';
+      meta.prepend(tag);
+    }
+  }
+}
+
+function markDeletedInDOM(msgId) {
+  const row = document.getElementById(`msg-${msgId}`);
+  if (!row) return;
+  const bubble = row.querySelector('.bubble');
+  if (bubble) {
+    bubble.innerHTML = `<span class="deleted-bubble">🚫 This message was deleted</span>`;
+  }
+  const actions = row.querySelector('.msg-actions');
+  if (actions) actions.innerHTML = '';
 }
 
 function appendSystem(text) {
@@ -195,13 +290,46 @@ function appendSystem(text) {
   div.textContent = text;
   area.appendChild(div);
   scrollToBottom(true);
-  lastMsgAuthor = null;
+  lastAuthorId = null;
 }
 
 function scrollToBottom(smooth = true) {
   const area = document.getElementById('messages-area');
   area.scrollTo({ top: area.scrollHeight, behavior: smooth ? 'smooth' : 'instant' });
 }
+
+// ── Context menu ──────────────────────────────────────────
+function openCtxMenu(e, msgId, bubbleEl) {
+  e.preventDefault();
+  const row = document.getElementById(`msg-${msgId}`);
+  ctxMsgId      = msgId;
+  ctxMsgContent = row?.dataset.content || '';
+  ctxIsMe       = row?.dataset.isMe === '1';
+
+  const menu = document.getElementById('ctx-menu');
+  document.getElementById('ctx-edit').style.display   = ctxIsMe ? '' : 'none';
+  document.getElementById('ctx-delete').style.display = ctxIsMe ? '' : 'none';
+
+  menu.style.left = Math.min(e.clientX, window.innerWidth  - 180) + 'px';
+  menu.style.top  = Math.min(e.clientY, window.innerHeight - 120) + 'px';
+  menu.classList.add('open');
+}
+
+function closeCtxMenu() {
+  document.getElementById('ctx-menu').classList.remove('open');
+}
+
+function ctxEdit()   { if (ctxMsgId) startEdit(ctxMsgId, ctxMsgContent); }
+function ctxCopy()   { copyText(ctxMsgContent); closeCtxMenu(); }
+function ctxDelete() { if (ctxMsgId) deleteMessage(ctxMsgId); }
+
+function copyText(text) {
+  navigator.clipboard.writeText(text || '').then(() => toast('Copied!', 'success'));
+}
+
+document.addEventListener('click', e => {
+  if (!document.getElementById('ctx-menu').contains(e.target)) closeCtxMenu();
+});
 
 // ── Rooms CRUD ────────────────────────────────────────────
 function openNewRoomModal() {
@@ -218,17 +346,14 @@ function closeNewRoomModal() {
 async function createRoom() {
   const name = document.getElementById('new-room-name').value.trim();
   if (!name) return;
-
   const data = await api('/api/chat/rooms', { method: 'POST', body: JSON.stringify({ name }) });
   if (!data) return;
-
   if (!data.success) {
     const err = document.getElementById('room-error');
-    err.textContent = data.message || 'Failed to create room.';
+    err.textContent = data.message || 'Failed.';
     err.classList.add('show');
     return;
   }
-
   closeNewRoomModal();
   toast(`Room #${name} created!`, 'success');
   await loadRooms();
@@ -263,14 +388,10 @@ function renderOnlineUsers(users) {
   list.innerHTML = users.map(u => {
     const init   = (u.username || '?')[0].toUpperCase();
     const status = (u.status || 'online').toLowerCase();
-    return `
-      <div class="online-user">
-        <div class="avatar xs">${escHtml(init)}
-          <span class="status-badge ${status}"></span>
-        </div>
-        <span class="name">${escHtml(u.username)}</span>
-        <span class="status-text">${status}</span>
-      </div>`;
+    return `<div class="online-user">
+      <div class="avatar sm">${escHtml(init)}<span class="status-badge ${status}"></span></div>
+      <span class="name">${escHtml(u.username)}</span>
+    </div>`;
   }).join('');
 }
 
@@ -282,39 +403,30 @@ async function connectHub() {
     .configureLogging(signalR.LogLevel.Warning)
     .build();
 
-  // Room message
   hub.on('ReceiveMessage', msg => {
     if (msg.roomId === currentRoomId) {
       appendMessage(msg, true);
     } else {
-      // Increment unread badge
       unreadCounts[msg.roomId] = (unreadCounts[msg.roomId] || 0) + 1;
       loadRooms();
-      toast(`New message in #${msg.roomId.slice(0,6)}…`, 'info');
     }
   });
 
-  // Private message
   hub.on('ReceivePrivateMessage', msg => {
     toast(`💬 ${msg.senderUsername}: ${msg.content.slice(0, 60)}`, 'info');
   });
 
-  // Join / leave
   hub.on('UserJoinedRoom', ({ userId, roomId }) => {
-    if (roomId === currentRoomId && userId !== myUserId)
-      appendSystem('Someone joined the room');
+    if (roomId === currentRoomId && userId !== myUserId) appendSystem('Someone joined');
   });
 
   hub.on('UserLeftRoom', ({ userId, roomId }) => {
-    if (roomId === currentRoomId && userId !== myUserId)
-      appendSystem('Someone left the room');
+    if (roomId === currentRoomId && userId !== myUserId) appendSystem('Someone left');
   });
 
-  // Presence
   hub.on('UserOnline',  () => loadOnlineUsers());
   hub.on('UserOffline', () => loadOnlineUsers());
 
-  // Typing
   hub.on('UserTyping', ({ userId, roomId }) => {
     if (roomId !== currentRoomId || userId === myUserId) return;
     typingUsers[userId] = userId;
@@ -328,7 +440,7 @@ async function connectHub() {
 
   hub.onreconnecting(() => toast('Reconnecting…', 'info'));
   hub.onreconnected(() => {
-    toast('Connected', 'success');
+    toast('Connected ✓', 'success');
     if (currentRoomId) hub.invoke('JoinRoom', currentRoomId).catch(() => {});
     loadOnlineUsers();
   });
@@ -336,9 +448,8 @@ async function connectHub() {
 
   try {
     await hub.start();
-    toast('Connected', 'success');
   } catch {
-    toast('Real-time unavailable — using REST fallback', 'info');
+    toast('Real-time unavailable — using REST', 'info');
   }
 }
 
@@ -350,32 +461,25 @@ function logout() {
 }
 
 // ── Toast ─────────────────────────────────────────────────
-const _toastTimers = {};
 function toast(msg, type = 'info') {
-  const container = document.getElementById('toast-container');
-  const id  = Date.now();
-  const el  = document.createElement('div');
+  const c  = document.getElementById('toast-container');
+  const el = document.createElement('div');
   const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ';
   el.className = `toast ${type}`;
-  el.innerHTML = `<span class="toast-icon">${icon}</span><span>${escHtml(msg)}</span>`;
-  container.appendChild(el);
+  el.innerHTML = `<span style="font-size:.9rem">${icon}</span><span>${escHtml(msg)}</span>`;
+  c.appendChild(el);
   requestAnimationFrame(() => el.classList.add('show'));
-  _toastTimers[id] = setTimeout(() => {
-    el.classList.remove('show');
-    setTimeout(() => el.remove(), 350);
-  }, 3500);
+  setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 350); }, 3500);
 }
 
 // ── Helpers ───────────────────────────────────────────────
 function escHtml(s) {
-  return String(s ?? '')
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 // Modal keyboard
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeNewRoomModal();
+  if (e.key === 'Escape') { closeNewRoomModal(); closeCtxMenu(); }
 });
 document.getElementById('new-room-modal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeNewRoomModal();

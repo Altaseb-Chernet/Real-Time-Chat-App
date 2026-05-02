@@ -8,4 +8,6 @@ public class MessageResponse
     public string SenderUsername { get; set; } = string.Empty;
     public string RoomId { get; set; } = string.Empty;
     public DateTime SentAt { get; set; }
+    public bool IsEdited { get; set; }
+    public bool IsDeleted { get; set; }
 }

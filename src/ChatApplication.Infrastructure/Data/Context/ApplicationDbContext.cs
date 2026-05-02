@@ -41,9 +41,6 @@ public class ApplicationDbContext : DbContext
             entity.Property(u => u.Bio).HasMaxLength(300);
             entity.Property(u => u.IsDeleted).HasDefaultValue(false);
             entity.Property(u => u.CreatedAt).IsRequired();
-
-            // Soft-delete filter
-            entity.HasQueryFilter(u => !u.IsDeleted);
         });
     }
 
@@ -78,6 +75,8 @@ public class ApplicationDbContext : DbContext
             entity.Property(m => m.RoomId).HasMaxLength(36).IsRequired();
             entity.Property(m => m.SentAt).IsRequired();
             entity.Property(m => m.IsDeleted).HasDefaultValue(false);
+            entity.Property(m => m.IsEdited).HasDefaultValue(false);
+            entity.Property(m => m.EditedAt);
 
             // Message -> User (sender)
             entity.HasOne(m => m.Sender)

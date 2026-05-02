@@ -9,7 +9,8 @@ obj/
 ## Environment
 .env
 appsettings.Production.json
-
+appsettings
+src/ChatApplication.API/appsettings.json
 ## Docker
 docker-compose.override.yml
 
