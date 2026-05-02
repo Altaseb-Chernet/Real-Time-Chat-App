@@ -24,9 +24,13 @@ public class MessageService : IMessageService
         var room = await _chatRoomRepository.GetByIdAsync(request.RoomId)
             ?? throw new AppException(ErrorMessages.RoomNotFound, 404);
 
+        // Auto-join sender if not already a member (handles first-time senders)
         var isMember = await _chatRoomRepository.IsMemberAsync(request.RoomId, request.SenderId);
         if (!isMember)
-            throw new AppException("You are not a member of this room.", 403);
+        {
+            await _chatRoomRepository.AddMemberAsync(request.RoomId, request.SenderId);
+            await _chatRoomRepository.SaveChangesAsync();
+        }
 
         var message = new Message
         {
@@ -53,6 +57,25 @@ public class MessageService : IMessageService
         return messages.OrderBy(m => m.SentAt).Select(MapToResponse);
     }
 
+    public async Task<MessageResponse> EditMessageAsync(string messageId, string userId, string newContent)
+    {
+        if (string.IsNullOrWhiteSpace(newContent))
+            throw new AppException("Message content cannot be empty.");
+
+        var message = await _messageRepository.GetByIdWithSenderAsync(messageId)
+            ?? throw new AppException(ErrorMessages.MessageNotFound, 404);
+
+        if (message.SenderId != userId)
+            throw new AppException(ErrorMessages.Unauthorized, 403);
+
+        message.Content  = newContent;
+        message.IsEdited = true;
+        message.EditedAt = DateTime.UtcNow;
+
+        await _messageRepository.SaveChangesAsync();
+        return MapToResponse(message);
+    }
+
     public async Task DeleteMessageAsync(string messageId, string userId)
     {
         var message = await _messageRepository.GetByIdAsync(messageId)
@@ -67,11 +90,13 @@ public class MessageService : IMessageService
 
     private static MessageResponse MapToResponse(Message m) => new()
     {
-        Id = m.Id,
-        Content = m.Content,
-        SenderId = m.SenderId,
+        Id             = m.Id,
+        Content        = m.Content,
+        SenderId       = m.SenderId,
         SenderUsername = m.Sender?.Username ?? string.Empty,
-        RoomId = m.RoomId,
-        SentAt = m.SentAt
+        RoomId         = m.RoomId,
+        SentAt         = m.SentAt,
+        IsEdited       = m.IsEdited,
+        IsDeleted      = m.IsDeleted
     };
 }
