@@ -10,4 +10,10 @@ public class MessageResponse
     public DateTime SentAt { get; set; }
     public bool IsEdited { get; set; }
     public bool IsDeleted { get; set; }
+
+    // Optional media attachment for the UI.
+    public string? MediaUrl { get; set; }
+    public string? MediaType { get; set; }
+    public string? MediaName { get; set; }
+    public long? MediaBytes { get; set; }
 }

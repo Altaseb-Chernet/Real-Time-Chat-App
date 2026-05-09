@@ -65,4 +65,30 @@ public class ChatRoomService : IChatRoomService
 
     public Task<bool> IsMemberAsync(string roomId, string userId)
         => _repository.IsMemberAsync(roomId, userId);
+
+    public async Task<IReadOnlyList<RoomMemberDto>> GetMembersAsync(string roomId)
+    {
+        var room = await _repository.GetByIdAsync(roomId)
+            ?? throw new AppException(ErrorMessages.RoomNotFound, 404);
+
+        var members = await _repository.GetMembersAsync(roomId);
+        return members
+            .Select(m => new RoomMemberDto(m.userId, m.username, m.joinedAt, m.userId == room.CreatedByUserId))
+            .ToList();
+    }
+
+    public async Task KickMemberAsync(string roomId, string actorUserId, string targetUserId)
+    {
+        var room = await _repository.GetByIdAsync(roomId)
+            ?? throw new AppException(ErrorMessages.RoomNotFound, 404);
+
+        if (room.CreatedByUserId != actorUserId)
+            throw new AppException(ErrorMessages.Unauthorized, 403);
+
+        if (targetUserId == actorUserId)
+            throw new AppException("You can't remove yourself. Leave the room instead.", 400);
+
+        await _repository.RemoveMemberAsync(roomId, targetUserId);
+        await _repository.SaveChangesAsync();
+    }
 }

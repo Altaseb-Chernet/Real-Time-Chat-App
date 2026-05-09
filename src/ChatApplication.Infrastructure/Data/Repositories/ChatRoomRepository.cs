@@ -32,4 +32,15 @@ public class ChatRoomRepository : GenericRepository<ChatRoom>, IChatRoomReposito
         var member = await GetMemberAsync(roomId, userId);
         if (member is not null) _context.ChatRoomMembers.Remove(member);
     }
+
+    public async Task<IReadOnlyList<(string userId, string username, DateTime joinedAt)>> GetMembersAsync(string roomId)
+        => await _context.ChatRoomMembers
+            .Where(m => m.RoomId == roomId)
+            .Include(m => m.User)
+            .OrderBy(m => m.JoinedAt)
+            .Select(m => new ValueTuple<string, string, DateTime>(
+                m.UserId,
+                m.User != null ? m.User.Username : "",
+                m.JoinedAt))
+            .ToListAsync();
 }

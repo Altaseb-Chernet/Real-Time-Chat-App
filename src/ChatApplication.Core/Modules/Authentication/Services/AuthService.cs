@@ -80,7 +80,7 @@ public class AuthService : IAuthService
 
     private AuthResponse BuildAuthResponse(AppUser user)
     {
-        var token = _tokenService.GenerateToken(user.Id, user.Email, user.Role);
+        var token = _tokenService.GenerateToken(user.Id, user.Username, user.Email, user.Role);
         return new AuthResponse
         {
             Token = token,
