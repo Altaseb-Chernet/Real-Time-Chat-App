@@ -1,0 +1,420 @@
+@page "/chat"
+@inject AuthService Auth
+@inject ChatApiService Api
+@inject HubService Hub
+@inject AppState State
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<PageTitle>ChatApp</PageTitle>
+
+<div class="chat-layout">
+
+    <!-- ── Sidebar ──────────────────────────────────────── -->
+    <aside class="sidebar">
+        <div class="sidebar-top">
+            <div class="sidebar-logo">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                ChatApp
+            </div>
+            <div class="sidebar-search">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input type="text" placeholder="Search…" @bind="searchQuery" @bind:event="oninput"/>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="sidebar-tabs">
+            <button class="stab @(State.CurrentView == AppState.ViewMode.Room ? "active" : "")"
+                    @onclick="() => State.CurrentView = AppState.ViewMode.Room">
+                # Rooms
+            </button>
+            <button class="stab @(State.CurrentView == AppState.ViewMode.DM ? "active" : "")"
+                    @onclick="() => State.CurrentView = AppState.ViewMode.DM">
+                💬 DMs
+                @if (State.TotalUnreadDms > 0)
+                {
+                    <span class="badge">@State.TotalUnreadDms</span>
+                }
+            </button>
+        </div>
+
+        <!-- Room list -->
+        @if (State.CurrentView == AppState.ViewMode.Room)
+        {
+            <div class="sidebar-section-label">
+                <span>Rooms</span>
+                <button class="icon-btn" @onclick="OpenNewRoomModal" title="New room">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="room-list">
+                @foreach (var room in FilteredRooms)
+                {
+                    var unread = State.UnreadRooms.TryGetValue(room.Id, out var u) ? u : 0;
+                    <div class="room-item @(State.ActiveRoomId == room.Id ? "active" : "")"
+                         @onclick="() => SelectRoom(room)">
+                        <span class="room-hash">#</span>
+                        <span class="room-name">@room.Name</span>
+                        @if (unread > 0) { <span class="badge">@unread</span> }
+                    </div>
+                }
+            </div>
+        }
+
+        <!-- DM list -->
+        @if (State.CurrentView == AppState.ViewMode.DM)
+        {
+            <div class="sidebar-section-label"><span>Direct Messages</span></div>
+            <div class="room-list">
+                @foreach (var user in State.Users.Where(u => u.UserId != Auth.UserId))
+                {
+                    var unread = State.UnreadDms.TryGetValue(user.UserId, out var u) ? u : 0;
+                    var isActive = State.ActiveDmUserId == user.UserId && State.CurrentView == AppState.ViewMode.DM;
+                    <div class="room-item @(isActive ? "active" : "")"
+                         @onclick="() => OpenDm(user)">
+                        <div class="dm-avatar">@AvatarInitial(user.Username)
+                            <span class="status-dot @user.Status.ToLower()"></span>
+                        </div>
+                        <span class="room-name">@user.Username</span>
+                        @if (unread > 0) { <span class="badge">@unread</span> }
+                    </div>
+                }
+                @if (!State.Users.Any(u => u.UserId != Auth.UserId))
+                {
+                    <div class="empty-hint">No users found</div>
+                }
+            </div>
+        }
+
+        <!-- Footer -->
+        <div class="sidebar-footer">
+            <div class="my-avatar">@(Auth.Username?[0].ToString().ToUpper() ?? "?")</div>
+            <div class="my-info">
+                <div class="my-name">@Auth.Username</div>
+                <div class="my-status">● Online</div>
+            </div>
+            <button class="icon-btn danger" @onclick="Logout" title="Sign out">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                    <polyline points="16 17 21 12 16 7"/>
+                    <line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+            </button>
+        </div>
+    </aside>
+
+    <!-- ── Main ─────────────────────────────────────────── -->
+    <main class="chat-main">
+        @if (State.CurrentView == AppState.ViewMode.Room && State.ActiveRoomId == null)
+        {
+            <div class="empty-state">
+                <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                <h3>No room selected</h3>
+                <p>Pick a room from the sidebar or create a new one.</p>
+                <button class="btn-accent" @onclick="OpenNewRoomModal">+ Create a Room</button>
+            </div>
+        }
+        else if (State.CurrentView == AppState.ViewMode.DM && State.ActiveDmUserId == null)
+        {
+            <div class="empty-state">
+                <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                <h3>No conversation selected</h3>
+                <p>Click a user from the DMs tab to start a private conversation.</p>
+            </div>
+        }
+        else
+        {
+            <!-- Header -->
+            <div class="chat-header">
+                <div class="chat-header-left">
+                    @if (State.CurrentView == AppState.ViewMode.Room)
+                    {
+                        <div class="chat-title">
+                            <span class="hash-icon">#</span>
+                            <span>@State.ActiveRoom?.Name</span>
+                        </div>
+                        <div class="chat-subtitle">@State.OnlineUsers.Count online</div>
+                    }
+                    else
+                    {
+                        <div class="dm-header-avatar">@(State.ActiveDmUsername?[0].ToString().ToUpper() ?? "?")</div>
+                        <div>
+                            <div class="chat-title">@State.ActiveDmUsername</div>
+                            <div class="chat-subtitle">
+                                @{ var dmUser = State.Users.FirstOrDefault(u => u.UserId == State.ActiveDmUserId); }
+                                @(dmUser != null ? "● " + dmUser.Status : "● Offline")
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="chat-header-right">
+                    @if (State.CurrentView == AppState.ViewMode.Room)
+                    {
+                        <button class="icon-btn" @onclick="RefreshMessages" title="Refresh">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <polyline points="23 4 23 10 17 10"/>
+                                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                            </svg>
+                        </button>
+                        <button class="icon-btn danger" @onclick="LeaveRoom" title="Leave room">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                                <polyline points="16 17 21 12 16 7"/>
+                                <line x1="21" y1="12" x2="9" y2="12"/>
+                            </svg>
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <!-- Messages -->
+            <div class="messages-area" id="messages-area">
+                @{
+                    string? lastSender = null;
+                }
+                @if (State.CurrentView == AppState.ViewMode.Room && State.ActiveRoomId != null)
+                {
+                    foreach (var msg in State.GetRoomMessages(State.ActiveRoomId))
+                    {
+                        var isMe   = msg.SenderId == Auth.UserId;
+                        var isCont = lastSender == msg.SenderId;
+                        lastSender = msg.SenderId;
+                        <MessageBubble Msg="@msg" IsMe="@isMe" IsContinued="@isCont"
+                                       OnEdit="StartEdit" OnDelete="DeleteMsg" OnCopy="CopyMsg"
+                                       OpenRequested="OpenLightbox"/>
+                    }
+                }
+                else if (State.CurrentView == AppState.ViewMode.DM && State.ActiveDmUserId != null)
+                {
+                    foreach (var dm in State.GetDmMessages(State.ActiveDmUserId))
+                    {
+                        var isMe   = dm.SenderId == Auth.UserId;
+                        var isCont = lastSender == dm.SenderId;
+                        lastSender = dm.SenderId;
+                        var asMsg  = new MessageDto(dm.Id, dm.Content, dm.SenderId, dm.SenderUsername,
+                            "", dm.SentAt, false, false, dm.MediaUrl, dm.MediaType, dm.MediaName, dm.MediaBytes);
+                        <MessageBubble Msg="@asMsg" IsMe="@isMe" IsContinued="@isCont"
+                                       OnEdit="@(_ => {})" OnDelete="@(_ => {})" OnCopy="CopyMsg"
+                                       OpenRequested="OpenLightbox"/>
+                    }
+                }
+                <div id="scroll-anchor"></div>
+            </div>
+
+            <!-- Typing indicator -->
+            <div class="typing-bar">
+                @if (TypingUsernames.Any())
+                {
+                    <span>@(string.Join(", ", TypingUsernames)) @(TypingUsernames.Count == 1 ? "is" : "are") typing</span>
+                    <span class="typing-dots"><span></span><span></span><span></span></span>
+                }
+            </div>
+
+            <!-- Input -->
+            <div class="input-area">
+                @if (editingMsgId != null)
+                {
+                    <div class="edit-banner">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                        <span>Editing message</span>
+                        <button @onclick="CancelEdit">✕</button>
+                    </div>
+                }
+                @if (uploading)
+                {
+                    <div class="upload-banner">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <polyline points="16 16 12 12 8 16"/>
+                            <line x1="12" y1="12" x2="12" y2="21"/>
+                            <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+                        </svg>
+                        <span>Uploading @uploadFileName…</span>
+                        <div class="progress-track"><div class="progress-fill" style="width:@uploadPct%"></div></div>
+                        <span>@uploadPct%</span>
+                    </div>
+                }
+                @if (pendingMedia != null)
+                {
+                    <div class="attach-preview">
+                        @if ((pendingMedia.MediaType ?? "").ToLower() == "image")
+                        {
+                            <img class="attach-thumb" src="@pendingMedia.Url" alt="@pendingMedia.FileName"/>
+                        }
+                        else if ((pendingMedia.MediaType ?? "").ToLower() == "video")
+                        {
+                            <video class="attach-video" controls preload="metadata" src="@pendingMedia.Url"></video>
+                        }
+                        else if ((pendingMedia.MediaType ?? "").ToLower() == "audio")
+                        {
+                            <audio class="attach-audio" controls src="@pendingMedia.Url"></audio>
+                        }
+                        else
+                        {
+                            <div class="attach-icon">📎</div>
+                        }
+                        <div class="attach-meta">
+                            <div class="attach-name">@pendingMedia.FileName</div>
+                            <div class="attach-sub">
+                                @if (!string.IsNullOrWhiteSpace(inputText))
+                                {
+                                    <span>Caption: @inputText</span>
+                                }
+                                else
+                                {
+                                    <span>Add a caption, then press Send</span>
+                                }
+                            </div>
+                        </div>
+                        <button class="attach-remove" @onclick="@(() => pendingMedia = null)" type="button" title="Remove">✕</button>
+                    </div>
+                }
+                <div class="input-row">
+                    <InputFile id="file-picker" OnChange="HandleFileUpload" style="display:none"
+                               accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar"/>
+                    <label class="attach-btn" for="file-picker" title="Attach file" style="cursor:pointer">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                        </svg>
+                    </label>
+                    <button class="attach-btn voice-btn @(recording ? "rec" : "")" @onclick="ToggleRecording" title="Voice message" type="button">
+                        @if (!recording)
+                        {
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                                <line x1="12" y1="19" x2="12" y2="23"/>
+                                <line x1="8" y1="23" x2="16" y2="23"/>
+                            </svg>
+                        }
+                        else
+                        {
+                            <span class="rec-dot"></span>
+                        }
+                    </button>
+                    <input class="msg-input" type="text" placeholder="@InputPlaceholder"
+                           @bind="inputText" @bind:event="oninput"
+                           @onkeydown="HandleKey" @ref="inputRef"/>
+                    <button class="send-btn" @onclick="SendOrEdit" disabled="@((string.IsNullOrWhiteSpace(inputText) && pendingMedia == null && !uploading) || sending)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        }
+    </main>
+
+    <!-- ── Right panel ───────────────────────────────────── -->
+    <aside class="right-panel">
+        <div class="rp-header">
+            Members
+            @if (State.CurrentView == AppState.ViewMode.Room && State.ActiveRoomId != null)
+            {
+                <span class="badge-sm">@State.GetRoomMembers(State.ActiveRoomId).Count</span>
+            }
+            else
+            {
+                <span class="badge-sm">@State.Users.Count</span>
+            }
+        </div>
+        <div class="member-list">
+            @if (State.CurrentView == AppState.ViewMode.Room && State.ActiveRoomId != null)
+            {
+                var members = State.GetRoomMembers(State.ActiveRoomId);
+                foreach (var m in members)
+                {
+                    var isAdmin = State.ActiveRoom?.CreatedByUserId == Auth.UserId;
+                    <div class="member-item" title="@m.Username">
+                        <div class="member-avatar">@AvatarInitial(m.Username)</div>
+                        <div class="member-info">
+                            <div class="member-name">
+                                @m.Username @(m.UserId == Auth.UserId ? "(you)" : "") @if (m.IsCreator) { <span class="member-pill">admin</span> }
+                            </div>
+                            <div class="member-status">@m.JoinedAt.ToLocalTime().ToString("MMM d · HH:mm")</div>
+                        </div>
+                        @if (isAdmin && m.UserId != Auth.UserId)
+                        {
+                            <button class="kick-btn" @onclick="() => KickUser(m.UserId)" type="button" title="Remove user">Remove</button>
+                        }
+                    </div>
+                }
+                if (members.Count == 0)
+                {
+                    <div class="empty-hint">No members loaded</div>
+                }
+            }
+            else
+            {
+                foreach (var user in State.Users)
+                {
+                    <div class="member-item" @onclick="() => OpenDmFromPanel(user)" title="Send DM">
+                        <div class="member-avatar">@AvatarInitial(user.Username)
+                            <span class="status-dot @user.Status.ToLower()"></span>
+                        </div>
+                        <div class="member-info">
+                            <div class="member-name">@user.Username @(user.UserId == Auth.UserId ? "(you)" : "")</div>
+                            <div class="member-status">@user.Status</div>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </aside>
+</div>
+
+<!-- New room modal -->
+@if (showNewRoomModal)
+{
+    <div class="modal-overlay" @onclick="CloseNewRoomModal">
+        <div class="modal" @onclick:stopPropagation>
+            <h3>Create a Room</h3>
+            <div class="form-group" style="margin-top:1rem">
+                <label>Room name</label>
+                <input type="text" @bind="newRoomName" class="form-input" placeholder="e.g. general"
+                       @onkeydown="@(e => { if (e.Key == "Enter") _ = CreateRoom(); })"/>
+            </div>
+            @if (!string.IsNullOrEmpty(roomError))
+            {
+                <div class="auth-error">@roomError</div>
+            }
+            <div class="modal-actions">
+                <button class="btn-ghost" @onclick="CloseNewRoomModal">Cancel</button>
+                <button class="btn-accent" @onclick="CreateRoom">Create</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Lightbox -->
+@if (lightboxUrl != null)
+{
+    <div class="lightbox" @onclick="CloseLightbox">
+        <button class="lightbox-close" @onclick="CloseLightbox">✕</button>
+        <img src="@lightboxUrl" alt=""/>
+    </div>
+}
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container">
+    @foreach (var t in toasts)
+    {
+        <div class="toast @t.Type @(t.Visible ? "show" : "")">
+            <span>@t.Icon</span><span>@t.Message</span>
+        </div>
+    }
+</div>

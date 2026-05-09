@@ -1,0 +1,193 @@
+@using ChatApplication.Client.Models
+
+<div class="msg-row @(IsMe ? "me" : "other") @(IsContinued ? "continued" : "")">
+    <div class="msg-avatar">@(Msg.SenderUsername.Length > 0 ? Msg.SenderUsername[0].ToString().ToUpper() : "?")</div>
+    <div class="bubble-wrap">
+        @if (!IsContinued)
+        {
+            <div class="bubble-name">@Msg.SenderUsername</div>
+        }
+        <div class="bubble @(IsMe ? "bubble-me" : "bubble-other")"
+             @oncontextmenu:preventDefault @oncontextmenu="ToggleMenu">
+
+            @if (Msg.IsDeleted)
+            {
+                <span class="deleted-text">🚫 This message was deleted</span>
+            }
+            else
+            {
+                @if (!string.IsNullOrEmpty(Msg.MediaUrl))
+                {
+                    @RenderMedia()
+                }
+                @if (!string.IsNullOrEmpty(Msg.Content) && Msg.Content != Msg.MediaName)
+                {
+                    <div class="bubble-text">@Msg.Content</div>
+                }
+            }
+
+            <div class="bubble-footer">
+                @if (Msg.IsEdited) { <span class="edited-tag">edited</span> }
+                <span class="bubble-time">@Msg.SentAt.ToLocalTime().ToString("HH:mm")</span>
+                @if (IsMe) { <span class="read-tick">✓✓</span> }
+            </div>
+        </div>
+
+        <!-- Hover actions -->
+        @if (!Msg.IsDeleted)
+        {
+            <div class="msg-actions">
+                @if (IsMe)
+                {
+                    <button class="action-btn" @onclick="() => OnEdit.InvokeAsync(Msg.Id)" title="Edit">✏️</button>
+                }
+                <button class="action-btn" @onclick="() => OnCopy.InvokeAsync(Msg.Content)" title="Copy">📋</button>
+                @if (IsMe)
+                {
+                    <button class="action-btn danger" @onclick="() => OnDelete.InvokeAsync(Msg.Id)" title="Delete">🗑️</button>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Context menu -->
+@if (showMenu && !Msg.IsDeleted)
+{
+    <div class="ctx-menu" style="top:@menuY;left:@menuX" @onmouseleave="() => showMenu = false">
+        @if (IsMe)
+        {
+            <div class="ctx-item" @onclick="() => { OnEdit.InvokeAsync(Msg.Id); showMenu = false; }">
+                ✏️ Edit
+            </div>
+        }
+        <div class="ctx-item" @onclick="() => { OnCopy.InvokeAsync(Msg.Content); showMenu = false; }">
+            📋 Copy text
+        </div>
+        @if (IsMe)
+        {
+            <div class="ctx-item danger" @onclick="() => { OnDelete.InvokeAsync(Msg.Id); showMenu = false; }">
+                🗑️ Delete
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public MessageDto Msg         { get; set; } = null!;
+    [Parameter] public bool       IsMe        { get; set; }
+    [Parameter] public bool       IsContinued { get; set; }
+    [Parameter] public EventCallback<string> OnEdit   { get; set; }
+    [Parameter] public EventCallback<string> OnDelete { get; set; }
+    [Parameter] public EventCallback<string> OnCopy   { get; set; }
+    [Parameter] public EventCallback<string> OpenRequested { get; set; }
+
+    bool   showMenu;
+    string menuX = "0px", menuY = "0px";
+
+    void ToggleMenu(MouseEventArgs e)
+    {
+        menuX    = e.ClientX + "px";
+        menuY    = e.ClientY + "px";
+        showMenu = !showMenu;
+    }
+
+    RenderFragment RenderMedia() => builder =>
+    {
+        var type = (Msg.MediaType ?? "").ToLower();
+        var url  = Msg.MediaUrl!;
+        var name = Msg.MediaName ?? "file";
+        var size = Msg.MediaBytes.HasValue ? FormatBytes(Msg.MediaBytes.Value) : "";
+
+        if (type == "image")
+        {
+            builder.OpenElement(0, "img");
+            builder.AddAttribute(1, "src", url);
+            builder.AddAttribute(2, "class", "media-img");
+            builder.AddAttribute(3, "alt", name);
+            builder.AddAttribute(4, "loading", "lazy");
+            builder.AddAttribute(5, "onclick", EventCallback.Factory.Create(this, () => OpenRequested.InvokeAsync(url)));
+            builder.CloseElement();
+        }
+        else if (type == "video")
+        {
+            builder.OpenElement(0, "video");
+            builder.AddAttribute(1, "class", "media-video");
+            builder.AddAttribute(2, "controls", true);
+            builder.AddAttribute(3, "preload", "metadata");
+            builder.OpenElement(4, "source");
+            builder.AddAttribute(5, "src", url);
+            builder.CloseElement();
+            builder.CloseElement();
+        }
+        else if (type == "audio")
+        {
+            builder.OpenElement(0, "audio");
+            builder.AddAttribute(1, "class", "media-audio");
+            builder.AddAttribute(2, "controls", true);
+            builder.AddAttribute(3, "preload", "metadata");
+            builder.OpenElement(4, "source");
+            builder.AddAttribute(5, "src", url);
+            builder.AddAttribute(6, "type", GuessAudioMimeType(name));
+            builder.CloseElement();
+            builder.CloseElement();
+        }
+        else
+        {
+            builder.OpenElement(0, "a");
+            builder.AddAttribute(1, "href", url);
+            builder.AddAttribute(2, "target", "_blank");
+            builder.AddAttribute(3, "rel", "noopener");
+            builder.AddAttribute(4, "class", "media-doc");
+            builder.OpenElement(5, "span");
+            builder.AddAttribute(6, "class", "doc-icon");
+            builder.AddContent(7, DocIcon(name));
+            builder.CloseElement();
+            builder.OpenElement(8, "div");
+            builder.AddAttribute(9, "class", "doc-info");
+            builder.OpenElement(10, "div");
+            builder.AddAttribute(11, "class", "doc-name");
+            builder.AddContent(12, name);
+            builder.CloseElement();
+            builder.OpenElement(13, "div");
+            builder.AddAttribute(14, "class", "doc-size");
+            builder.AddContent(15, size);
+            builder.CloseElement();
+            builder.CloseElement();
+            builder.CloseElement();
+        }
+    };
+
+    static string DocIcon(string name)
+    {
+        var ext = System.IO.Path.GetExtension(name).TrimStart('.').ToLower();
+        return ext switch
+        {
+            "pdf"  => "📄", "doc" or "docx" => "📝",
+            "xls" or "xlsx" => "📊", "ppt" or "pptx" => "📋",
+            "zip" or "rar" or "7z" => "🗜️",
+            "txt" or "csv" => "📃", "mp3" or "wav" => "🎵",
+            _ => "📎"
+        };
+    }
+
+    static string FormatBytes(long b) => b switch
+    {
+        < 1024             => $"{b} B",
+        < 1024 * 1024      => $"{b / 1024.0:F1} KB",
+        _                  => $"{b / (1024.0 * 1024):F1} MB"
+    };
+
+    static string GuessAudioMimeType(string fileName)
+    {
+        var ext = System.IO.Path.GetExtension(fileName).TrimStart('.').ToLowerInvariant();
+        return ext switch
+        {
+            "ogg" => "audio/ogg",
+            "mp3" => "audio/mpeg",
+            "wav" => "audio/wav",
+            "m4a" => "audio/mp4",
+            _ => "audio/webm"
+        };
+    }
+}
