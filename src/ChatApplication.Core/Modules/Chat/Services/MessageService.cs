@@ -37,7 +37,12 @@ public class MessageService : IMessageService
             Content = request.Content,
             SenderId = request.SenderId,
             RoomId = request.RoomId,
-            SentAt = DateTime.UtcNow
+            SentAt = DateTime.UtcNow,
+            MediaUrl      = request.MediaUrl,
+            MediaPublicId = request.MediaPublicId,
+            MediaType     = request.MediaType,
+            MediaName     = request.MediaName,
+            MediaBytes    = request.MediaBytes
         };
 
         await _messageRepository.AddAsync(message);
@@ -97,6 +102,10 @@ public class MessageService : IMessageService
         RoomId         = m.RoomId,
         SentAt         = m.SentAt,
         IsEdited       = m.IsEdited,
-        IsDeleted      = m.IsDeleted
+        IsDeleted      = m.IsDeleted,
+        MediaUrl       = m.MediaUrl,
+        MediaType      = m.MediaType,
+        MediaName      = m.MediaName,
+        MediaBytes     = m.MediaBytes
     };
 }

@@ -13,7 +13,7 @@ appsettings
 src/ChatApplication.API/appsettings.json
 ## Docker
 docker-compose.override.yml
-
+publish_debug
 ## OS
 .DS_Store
 Thumbs.db

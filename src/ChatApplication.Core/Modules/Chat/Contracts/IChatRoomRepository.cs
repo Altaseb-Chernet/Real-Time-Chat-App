@@ -11,5 +11,6 @@ public interface IChatRoomRepository
     Task<bool> IsMemberAsync(string roomId, string userId);
     Task AddMemberAsync(string roomId, string userId);
     Task RemoveMemberAsync(string roomId, string userId);
+    Task<IReadOnlyList<(string userId, string username, DateTime joinedAt)>> GetMembersAsync(string roomId);
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

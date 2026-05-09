@@ -10,6 +10,13 @@ public class PrivateMessage : BaseEntity
     public DateTime SentAt { get; set; }
     public bool IsDeleted { get; set; }
 
+    // Optional media attachment (uploaded via /api/media/upload).
+    public string? MediaUrl { get; set; }
+    public string? MediaPublicId { get; set; }
+    public string? MediaType { get; set; }
+    public string? MediaName { get; set; }
+    public long? MediaBytes { get; set; }
+
     // Navigation properties
     public AppUser? Sender { get; set; }
     public AppUser? Recipient { get; set; }

@@ -1,0 +1,126 @@
+@page "/"
+@page "/login"
+@inject AuthService Auth
+@inject NavigationManager Nav
+@inject AppState State
+
+<PageTitle>ChatApp — Sign In</PageTitle>
+
+<div class="auth-page">
+    <div class="auth-card">
+        <div class="auth-logo">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+            <span>ChatApp</span>
+        </div>
+        <p class="auth-subtitle">Real-time messaging, built with .NET &amp; Blazor</p>
+
+        <div class="auth-tabs">
+            <button class="auth-tab @(isLogin ? "active" : "")" @onclick="() => isLogin = true">Sign In</button>
+            <button class="auth-tab @(!isLogin ? "active" : "")" @onclick="() => isLogin = false">Register</button>
+        </div>
+
+        @if (isLogin)
+        {
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" @bind="loginEmail" placeholder="you@example.com" class="form-input" @onkeydown="OnLoginKey"/>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <div class="input-pw-wrap">
+                    <input type="@(showPw ? "text" : "password")" @bind="loginPassword" placeholder="••••••••" class="form-input" @onkeydown="OnLoginKey"/>
+                    <button class="pw-toggle" @onclick="() => showPw = !showPw" type="button">@(showPw ? "🙈" : "👁️")</button>
+                </div>
+            </div>
+            <button class="btn-primary" @onclick="DoLogin" disabled="@loading">
+                @if (loading) { <span class="btn-spinner"></span> } else { <span>Sign In</span> }
+            </button>
+        }
+        else
+        {
+            <div class="form-group">
+                <label>Username</label>
+                <input type="text" @bind="regUsername" placeholder="johndoe" class="form-input" @onkeydown="OnRegKey"/>
+            </div>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" @bind="regEmail" placeholder="you@example.com" class="form-input" @onkeydown="OnRegKey"/>
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <div class="input-pw-wrap">
+                    <input type="@(showPw ? "text" : "password")" @bind="regPassword" placeholder="Min 8 characters" class="form-input" @onkeydown="OnRegKey"/>
+                    <button class="pw-toggle" @onclick="() => showPw = !showPw" type="button">@(showPw ? "🙈" : "👁️")</button>
+                </div>
+            </div>
+            <button class="btn-primary" @onclick="DoRegister" disabled="@loading">
+                @if (loading) { <span class="btn-spinner"></span> } else { <span>Create Account</span> }
+            </button>
+        }
+
+        @if (!string.IsNullOrEmpty(error))
+        {
+            <div class="auth-error">@error</div>
+        }
+    </div>
+</div>
+
+<style>
+.auth-page{display:flex;align-items:center;justify-content:center;min-height:100dvh;background:radial-gradient(ellipse 80% 60% at 50% -10%,rgba(124,111,255,.2) 0%,transparent 70%),#0d1117}
+.auth-card{background:#161b22;border:1px solid #30363d;border-radius:16px;padding:2.5rem 2.25rem;width:100%;max-width:420px;box-shadow:0 24px 64px rgba(0,0,0,.5)}
+.auth-logo{display:flex;align-items:center;gap:.6rem;font-size:1.5rem;font-weight:800;color:#7c6fff;margin-bottom:.4rem}
+.auth-subtitle{color:#7d8590;font-size:.875rem;margin-bottom:1.75rem}
+.auth-tabs{display:flex;gap:.4rem;margin-bottom:1.5rem;background:#1c2128;padding:.3rem;border-radius:10px}
+.auth-tab{flex:1;padding:.5rem;border:none;border-radius:6px;background:transparent;color:#7d8590;cursor:pointer;font-size:.875rem;font-weight:500;font-family:inherit;transition:all .2s}
+.auth-tab.active{background:#7c6fff;color:#fff;font-weight:600}
+.form-group{margin-bottom:1rem}
+.form-group label{display:block;font-size:.75rem;color:#8b949e;margin-bottom:.4rem;font-weight:500;text-transform:uppercase;letter-spacing:.06em}
+.form-input{width:100%;padding:.7rem 1rem;background:#1c2128;border:1px solid #30363d;border-radius:10px;color:#e6edf3;font-size:.9rem;outline:none;font-family:inherit;transition:border-color .2s,box-shadow .2s}
+.form-input:focus{border-color:#7c6fff;box-shadow:0 0 0 3px rgba(124,111,255,.2)}
+.form-input::placeholder{color:#7d8590}
+.input-pw-wrap{position:relative}
+.input-pw-wrap .form-input{padding-right:2.5rem}
+.pw-toggle{position:absolute;right:.6rem;top:50%;transform:translateY(-50%);background:transparent;border:none;cursor:pointer;font-size:.9rem;opacity:.6;transition:opacity .15s}
+.pw-toggle:hover{opacity:1}
+.btn-primary{display:flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:.75rem;background:#7c6fff;color:#fff;border:none;border-radius:10px;font-size:.9rem;font-weight:600;cursor:pointer;font-family:inherit;margin-top:.5rem;transition:all .2s;box-shadow:0 4px 16px rgba(124,111,255,.3)}
+.btn-primary:hover:not(:disabled){background:#6558e8;transform:translateY(-1px)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn-spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
+.auth-error{background:rgba(248,81,73,.12);border:1px solid rgba(248,81,73,.4);border-radius:6px;color:#f85149;padding:.6rem .9rem;font-size:.82rem;margin-top:.75rem}
+</style>
+
+@code {
+    bool isLogin = true, loading = false, showPw = false;
+    string loginEmail = "", loginPassword = "";
+    string regUsername = "", regEmail = "", regPassword = "";
+    string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.InitAsync();
+        if (Auth.IsAuthenticated) Nav.NavigateTo("/chat");
+    }
+
+    async Task DoLogin()
+    {
+        error = null; loading = true;
+        var (ok, err) = await Auth.LoginAsync(loginEmail, loginPassword);
+        loading = false;
+        if (ok) Nav.NavigateTo("/chat");
+        else error = err;
+    }
+
+    async Task DoRegister()
+    {
+        error = null; loading = true;
+        var (ok, err) = await Auth.RegisterAsync(regUsername, regEmail, regPassword);
+        loading = false;
+        if (ok) Nav.NavigateTo("/chat");
+        else error = err;
+    }
+
+    void OnLoginKey(KeyboardEventArgs e)  { if (e.Key == "Enter") _ = DoLogin(); }
+    void OnRegKey(KeyboardEventArgs e)    { if (e.Key == "Enter") _ = DoRegister(); }
+}

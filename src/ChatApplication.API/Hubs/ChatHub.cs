@@ -4,8 +4,10 @@ using ChatApplication.Core.Modules.Chat.Contracts;
 using ChatApplication.Core.Modules.Chat.Models;
 using ChatApplication.Core.Modules.User.Contracts;
 using ChatApplication.Infrastructure.SignalR.Interfaces;
+using ChatApplication.Infrastructure.Data.Context;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 
 namespace ChatApplication.API.Hubs;
 
@@ -17,19 +19,22 @@ public class ChatHub : Hub
     private readonly IUserTracker _userTracker;
     private readonly IConnectionManager _connectionManager;
     private readonly IUserPresenceService _presenceService;
+    private readonly ApplicationDbContext _db;
 
     public ChatHub(
         IMessageService messageService,
         IChatRoomService chatRoomService,
         IUserTracker userTracker,
         IConnectionManager connectionManager,
-        IUserPresenceService presenceService)
+        IUserPresenceService presenceService,
+        ApplicationDbContext db)
     {
         _messageService    = messageService;
         _chatRoomService   = chatRoomService;
         _userTracker       = userTracker;
         _connectionManager = connectionManager;
         _presenceService   = presenceService;
+        _db                = db;
     }
 
     // -------------------------------------------------------------------------
@@ -134,33 +139,79 @@ public class ChatHub : Hub
     // -------------------------------------------------------------------------
 
     /// <summary>Send a direct message to a specific user. Delivered to all their active connections.</summary>
-    public async Task SendPrivateMessage(string recipientUserId, string content)
+    public async Task SendPrivateMessage(
+        string recipientUserId,
+        string content,
+        string? mediaUrl = null,
+        string? mediaPublicId = null,
+        string? mediaType = null,
+        string? mediaName = null,
+        long? mediaBytes = null)
     {
-        if (string.IsNullOrWhiteSpace(content))
+        if (string.IsNullOrWhiteSpace(content) && string.IsNullOrWhiteSpace(mediaUrl))
             throw new HubException("Message content cannot be empty.");
 
         var senderId = GetUserId();
         var senderUsername = GetUsername();
+        if (senderId == recipientUserId)
+            throw new HubException("You cannot send a private message to yourself.");
 
-        var payload = new
+        var recipientExists = await _db.Users
+            .AnyAsync(u => u.Id == recipientUserId && !u.IsDeleted);
+        if (!recipientExists)
+            throw new HubException("Recipient not found.");
+
+        try
         {
-            SenderId = senderId,
-            SenderUsername = senderUsername,
-            RecipientId = recipientUserId,
-            Content = content,
-            SentAt = DateTime.UtcNow
-        };
+            // Persist DM to Postgres
+            var dm = new PrivateMessage
+            {
+                Content        = content ?? string.Empty,
+                SenderId       = senderId,
+                RecipientId    = recipientUserId,
+                SentAt         = DateTime.UtcNow,
+                IsDeleted      = false,
+                MediaUrl       = mediaUrl,
+                MediaPublicId  = mediaPublicId,
+                MediaType      = mediaType,
+                MediaName      = mediaName,
+                MediaBytes     = mediaBytes
+            };
+            _db.PrivateMessages.Add(dm);
+            await _db.SaveChangesAsync();
 
-        // Deliver to all recipient connections
-        var recipientConnections = await _userTracker.GetConnectionsAsync(recipientUserId);
-        foreach (var connectionId in recipientConnections)
-            await Clients.Client(connectionId).SendAsync(HubEvents.ReceivePrivateMessage, payload);
+            var payload = new
+            {
+                Id = dm.Id,
+                SenderId = senderId,
+                SenderUsername = senderUsername,
+                RecipientId = recipientUserId,
+                Content = dm.Content,
+                SentAt = dm.SentAt,
+                MediaUrl = dm.MediaUrl,
+                MediaType = dm.MediaType,
+                MediaName = dm.MediaName,
+                MediaBytes = dm.MediaBytes
+            };
 
-        // Echo back to sender's other connections
-        var senderConnections = (await _userTracker.GetConnectionsAsync(senderId))
-            .Where(c => c != Context.ConnectionId);
-        foreach (var connectionId in senderConnections)
-            await Clients.Client(connectionId).SendAsync(HubEvents.ReceivePrivateMessage, payload);
+            // Always echo to the sender's current connection so the UI updates immediately.
+            await Clients.Client(Context.ConnectionId).SendAsync(HubEvents.ReceivePrivateMessage, payload);
+
+            // Deliver to all recipient connections (if online). If offline, message remains persisted.
+            var recipientConnections = await _userTracker.GetConnectionsAsync(recipientUserId);
+            foreach (var connectionId in recipientConnections)
+                await Clients.Client(connectionId).SendAsync(HubEvents.ReceivePrivateMessage, payload);
+
+            // Echo back to sender's other connections
+            var senderConnections = (await _userTracker.GetConnectionsAsync(senderId))
+                .Where(c => c != Context.ConnectionId);
+            foreach (var connectionId in senderConnections)
+                await Clients.Client(connectionId).SendAsync(HubEvents.ReceivePrivateMessage, payload);
+        }
+        catch (DbUpdateException)
+        {
+            throw new HubException("Could not save private message. Please try again.");
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -192,7 +243,8 @@ public class ChatHub : Hub
 
     private string GetUsername()
         => Context.User?.FindFirstValue(ClaimTypes.Name)
-        ?? Context.User?.FindFirstValue("email")
+        ?? Context.User?.FindFirstValue("unique_name")
+        ?? Context.User?.FindFirstValue(ClaimTypes.Email)
         ?? GetUserId();
 
     private (string userId, string username) GetIdentity()

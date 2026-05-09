@@ -11,4 +11,9 @@ public interface IChatRoomService
     Task JoinRoomAsync(string roomId, string userId);
     Task LeaveRoomAsync(string roomId, string userId);
     Task<bool> IsMemberAsync(string roomId, string userId);
+
+    Task<IReadOnlyList<RoomMemberDto>> GetMembersAsync(string roomId);
+    Task KickMemberAsync(string roomId, string actorUserId, string targetUserId);
 }
+
+public record RoomMemberDto(string UserId, string Username, DateTime JoinedAt, bool IsCreator);

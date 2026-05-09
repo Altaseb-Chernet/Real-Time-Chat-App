@@ -74,6 +74,13 @@ public class ApplicationDbContext : DbContext
             entity.Property(m => m.SenderId).HasMaxLength(36).IsRequired();
             entity.Property(m => m.RoomId).HasMaxLength(36).IsRequired();
             entity.Property(m => m.SentAt).IsRequired();
+
+            entity.Property(m => m.MediaUrl).HasMaxLength(2000);
+            entity.Property(m => m.MediaPublicId).HasMaxLength(500);
+            entity.Property(m => m.MediaType).HasMaxLength(50);
+            entity.Property(m => m.MediaName).HasMaxLength(255);
+            entity.Property(m => m.MediaBytes);
+
             entity.Property(m => m.IsDeleted).HasDefaultValue(false);
             entity.Property(m => m.IsEdited).HasDefaultValue(false);
             entity.Property(m => m.EditedAt);
@@ -131,6 +138,12 @@ public class ApplicationDbContext : DbContext
             entity.Property(m => m.RecipientId).HasMaxLength(36).IsRequired();
             entity.Property(m => m.SentAt).IsRequired();
             entity.Property(m => m.IsDeleted).HasDefaultValue(false);
+
+            entity.Property(m => m.MediaUrl).HasMaxLength(2000);
+            entity.Property(m => m.MediaPublicId).HasMaxLength(500);
+            entity.Property(m => m.MediaType).HasMaxLength(50);
+            entity.Property(m => m.MediaName).HasMaxLength(255);
+            entity.Property(m => m.MediaBytes);
 
             entity.HasOne(m => m.Sender)
                   .WithMany()

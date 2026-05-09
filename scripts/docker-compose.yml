@@ -8,9 +8,15 @@ services:
       - "5000:5000"
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5000
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=chatapp;Username=chatuser;Password=chatpassword;Include Error Detail=true
+      - JwtSettings__Secret=dev-super-secret-key-for-local-compose-only
+      - JwtSettings__Issuer=ChatApplication
+      - JwtSettings__Audience=ChatApplication.Client
       - RedisSettings__ConnectionString=redis:6379
       - RabbitMqSettings__Host=rabbitmq
+      - Cloudinary__CloudName=${CLOUDINARY_CLOUD_NAME}
+      - Cloudinary__UploadPreset=${CLOUDINARY_UPLOAD_PRESET}
     depends_on:
       - postgres
       - redis
@@ -23,7 +29,7 @@ services:
       POSTGRES_USER: chatuser
       POSTGRES_PASSWORD: chatpassword
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql

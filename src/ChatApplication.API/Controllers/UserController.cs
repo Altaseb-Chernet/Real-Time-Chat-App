@@ -1,9 +1,11 @@
 using System.Security.Claims;
 using ChatApplication.Core.Modules.User.Contracts;
 using ChatApplication.Core.Modules.User.Models;
+using ChatApplication.Infrastructure.Data.Context;
 using ChatApplication.Shared.Responses;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace ChatApplication.API.Controllers;
 
@@ -14,11 +16,16 @@ public class UserController : ControllerBase
 {
     private readonly IUserService _userService;
     private readonly IUserPresenceService _presenceService;
+    private readonly ApplicationDbContext _db;
 
-    public UserController(IUserService userService, IUserPresenceService presenceService)
+    public UserController(
+        IUserService userService,
+        IUserPresenceService presenceService,
+        ApplicationDbContext db)
     {
         _userService = userService;
         _presenceService = presenceService;
+        _db = db;
     }
 
     // -------------------------------------------------------------------------
@@ -92,6 +99,30 @@ public class UserController : ControllerBase
         return Ok(ApiResponse<IEnumerable<UserStatusResponse>>.Ok(users.Select(MapStatus)));
     }
 
+    /// <summary>Get all registered users with their current presence status.</summary>
+    [HttpGet("all")]
+    [ProducesResponseType(typeof(ApiResponse<IEnumerable<UserStatusResponse>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAllUsers()
+    {
+        var online = (await _presenceService.GetOnlineUsersAsync())
+            .ToDictionary(u => u.UserId, u => u, StringComparer.Ordinal);
+
+        var users = await _db.Users
+            .AsNoTracking()
+            .Where(u => !u.IsDeleted)
+            .OrderBy(u => u.Username)
+            .Select(u => new UserStatusResponse
+            {
+                UserId = u.Id,
+                Username = u.Username,
+                Status = online.ContainsKey(u.Id) ? online[u.Id].Status.ToString() : "Offline",
+                LastSeen = online.ContainsKey(u.Id) ? online[u.Id].LastSeen : DateTime.UtcNow
+            })
+            .ToListAsync();
+
+        return Ok(ApiResponse<IEnumerable<UserStatusResponse>>.Ok(users));
+    }
+
     /// <summary>Get the presence status of a specific user.</summary>
     [HttpGet("{userId}/status")]
     [ProducesResponseType(typeof(ApiResponse<UserStatusResponse>), StatusCodes.Status200OK)]
@@ -133,8 +164,9 @@ public class UserController : ControllerBase
     private (string userId, string username) GetIdentity()
     {
         var userId = GetUserId();
-        var username = User.FindFirstValue(ClaimTypes.Email)
-                    ?? User.FindFirstValue("email")
+        var username = User.FindFirstValue(ClaimTypes.Name)
+                    ?? User.FindFirstValue("unique_name")
+                    ?? User.FindFirstValue(ClaimTypes.Email)
                     ?? userId;
         return (userId, username);
     }
