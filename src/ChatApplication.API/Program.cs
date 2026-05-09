@@ -1,6 +1,8 @@
 using ChatApplication.API.Extensions;
 using ChatApplication.API.Hubs;
 using ChatApplication.Infrastructure.Data.Context;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.StaticFiles;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,11 +13,11 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new() { Title = "ChatApplication API", Version = "v1" });
     c.AddSecurityDefinition("Bearer", new()
     {
-        Name = "Authorization",
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
-        Scheme = "bearer",
+        Name        = "Authorization",
+        Type        = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme      = "bearer",
         BearerFormat = "JWT",
-        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        In          = Microsoft.OpenApi.Models.ParameterLocation.Header,
         Description = "Enter your JWT token here"
     });
     c.AddSecurityRequirement(new()
@@ -26,14 +28,21 @@ builder.Services.AddSwaggerGen(c =>
         }
     });
 });
+
 builder.Services.AddApplicationServices(builder.Configuration);
+
+// Serve Blazor WebAssembly
+builder.Services.AddRazorPages();
 
 var app = builder.Build();
 
-// Tables already created via pgAdmin — skip EnsureCreatedAsync
-// (it runs a slow schema introspection query when tables exist)
+// Keep schema in sync on startup (important for DM/media columns).
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    db.Database.Migrate();
+}
 
-// Swagger always enabled so you can browse the API
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
@@ -41,19 +50,33 @@ app.UseSwaggerUI(c =>
     c.RoutePrefix = "swagger";
 });
 
-// Serve the chat UI from wwwroot
-app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseBlazorFrameworkFiles();
+// Ensure recorded audio/video files are served with correct MIME types
+// so the browser can compute duration and play them (fixes "0:00" issues).
+var contentTypes = new FileExtensionContentTypeProvider();
+contentTypes.Mappings[".ogg"]  = "audio/ogg";
+contentTypes.Mappings[".opus"] = "audio/ogg";
+contentTypes.Mappings[".m4a"]  = "audio/mp4";
+contentTypes.Mappings[".mp3"]  = "audio/mpeg";
+contentTypes.Mappings[".wav"]  = "audio/wav";
+contentTypes.Mappings[".mp4"]  = "video/mp4";
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    ContentTypeProvider = contentTypes
+});
 
 app.UseErrorHandling();
 app.UseRequestLogging();
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapRazorPages();
 app.MapControllers();
 app.MapHub<ChatHub>("/hubs/chat");
 app.MapHub<PresenceHub>("/hubs/presence");
 
-// Fallback: any unknown route → index.html (SPA-style)
+// Fallback to Blazor index.html
 app.MapFallbackToFile("index.html");
 
 app.Run();
