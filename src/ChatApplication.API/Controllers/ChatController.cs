@@ -2,8 +2,12 @@ using System.Security.Claims;
 using ChatApplication.Core.Modules.Chat.Contracts;
 using ChatApplication.Core.Modules.Chat.Models;
 using ChatApplication.Shared.Responses;
+using ChatApplication.API.Hubs;
+using ChatApplication.Infrastructure.Data.Context;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 
 namespace ChatApplication.API.Controllers;
 
@@ -14,11 +18,19 @@ public class ChatController : ControllerBase
 {
     private readonly IChatRoomService _chatRoomService;
     private readonly IMessageService _messageService;
+    private readonly IHubContext<ChatHub> _hubContext;
+    private readonly ApplicationDbContext _db;
 
-    public ChatController(IChatRoomService chatRoomService, IMessageService messageService)
+    public ChatController(
+        IChatRoomService chatRoomService,
+        IMessageService messageService,
+        IHubContext<ChatHub> hubContext,
+        ApplicationDbContext db)
     {
         _chatRoomService = chatRoomService;
         _messageService = messageService;
+        _hubContext      = hubContext;
+        _db = db;
     }
 
     // -------------------------------------------------------------------------
@@ -118,6 +130,39 @@ public class ChatController : ControllerBase
         return Ok(ApiResponse<PagedResponse<MessageResponse>>.Ok(paged));
     }
 
+    /// <summary>Get private-message history with another user.</summary>
+    [HttpGet("dms/{otherUserId}")]
+    [ProducesResponseType(typeof(ApiResponse<IEnumerable<PrivateMessageResponse>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetPrivateMessages(string otherUserId, [FromQuery] int take = 200)
+    {
+        var userId = GetUserId();
+        if (take is < 1 or > 500) take = 200;
+
+        var history = await _db.PrivateMessages
+            .AsNoTracking()
+            .Where(m => !m.IsDeleted &&
+                        ((m.SenderId == userId && m.RecipientId == otherUserId) ||
+                         (m.SenderId == otherUserId && m.RecipientId == userId)))
+            .OrderBy(m => m.SentAt)
+            .Take(take)
+            .Select(m => new PrivateMessageResponse
+            {
+                Id = m.Id,
+                SenderId = m.SenderId,
+                SenderUsername = m.Sender.Username,
+                RecipientId = m.RecipientId,
+                Content = m.Content,
+                SentAt = m.SentAt,
+                MediaUrl = m.MediaUrl,
+                MediaType = m.MediaType,
+                MediaName = m.MediaName,
+                MediaBytes = m.MediaBytes
+            })
+            .ToListAsync();
+
+        return Ok(ApiResponse<IEnumerable<PrivateMessageResponse>>.Ok(history));
+    }
+
     /// <summary>Send a message to a room via REST (alternative to SignalR).</summary>
     [HttpPost("rooms/{roomId}/messages")]
     [ProducesResponseType(typeof(ApiResponse<MessageResponse>), StatusCodes.Status201Created)]
@@ -130,8 +175,18 @@ public class ChatController : ControllerBase
         {
             Content = body.Content,
             SenderId = userId,
-            RoomId = roomId
+            RoomId = roomId,
+            MediaUrl      = body.MediaUrl,
+            MediaPublicId = body.MediaPublicId,
+            MediaType     = body.MediaType,
+            MediaName     = body.MediaName,
+            MediaBytes    = body.MediaBytes
         });
+
+        // REST send is an alternative to SignalR hub send — broadcast manually.
+        await _hubContext.Clients.Group(RoomGroup(roomId))
+                           .SendAsync(HubEvents.ReceiveMessage, response);
+
         return StatusCode(StatusCodes.Status201Created, ApiResponse<MessageResponse>.Ok(response));
     }
 
@@ -160,6 +215,30 @@ public class ChatController : ControllerBase
     }
 
     // -------------------------------------------------------------------------
+    // Members
+    // -------------------------------------------------------------------------
+
+    /// <summary>List members of a room.</summary>
+    [HttpGet("rooms/{roomId}/members")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<RoomMemberDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetRoomMembers(string roomId)
+    {
+        var members = await _chatRoomService.GetMembersAsync(roomId);
+        return Ok(ApiResponse<IReadOnlyList<RoomMemberDto>>.Ok(members));
+    }
+
+    /// <summary>Remove a user from a room (creator only).</summary>
+    [HttpDelete("rooms/{roomId}/members/{userId}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> KickMember(string roomId, string userId)
+    {
+        var actorId = GetUserId();
+        await _chatRoomService.KickMemberAsync(roomId, actorId, userId);
+        return NoContent();
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
@@ -175,6 +254,8 @@ public class ChatController : ControllerBase
         CreatedByUserId = r.CreatedByUserId,
         CreatedAt = r.CreatedAt
     };
+
+    private static string RoomGroup(string roomId) => $"room:{roomId}";
 }
 
 // -------------------------------------------------------------------------
@@ -191,11 +272,31 @@ public class SendMessageBody
 {
     /// <example>Hello everyone!</example>
     public string Content { get; set; } = string.Empty;
+
+    public string? MediaUrl { get; set; }
+    public string? MediaPublicId { get; set; }
+    public string? MediaType { get; set; }
+    public string? MediaName { get; set; }
+    public long? MediaBytes { get; set; }
 }
 
 public class EditMessageBody
 {
     public string Content { get; set; } = string.Empty;
+}
+
+public class PrivateMessageResponse
+{
+    public string Id { get; set; } = string.Empty;
+    public string SenderId { get; set; } = string.Empty;
+    public string SenderUsername { get; set; } = string.Empty;
+    public string RecipientId { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public DateTime SentAt { get; set; }
+    public string? MediaUrl { get; set; }
+    public string? MediaType { get; set; }
+    public string? MediaName { get; set; }
+    public long? MediaBytes { get; set; }
 }
 
 public class ChatRoomDto
