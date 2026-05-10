@@ -2,18 +2,17 @@
 
 ## Table of Contents
 1. [Local Development](#local-development)
-2. [Free Deployment Options](#free-deployment-options)
-3. [Recommended: Railway.app](#recommended-railwayapp)
-4. [Alternative: Render.com](#alternative-rendercom)
-5. [Alternative: Fly.io](#alternative-flyio)
-6. [Environment Variables](#environment-variables)
-7. [Troubleshooting](#troubleshooting)
+2. [Completely Free, No-Card Deployment](#completely-free-no-card-deployment)
+3. [Free Deployment Options Comparison](#free-deployment-options-comparison)
+4. [Recommended For Your Constraint](#recommended-for-your-constraint-self-hosted--cloudflare-tunnel)
+5. [Environment Variables](#environment-variables)
+6. [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Prerequisites
 - Docker and Docker Compose (for local testing)
-- .NET 8 SDK (for local development)
+- .NET 10 SDK only if you want to build outside Docker; Docker already uses .NET 10 images
 - Git repository (GitHub/GitLab)
 - Free account on chosen platform
 
@@ -24,360 +23,179 @@ docker-compose -f scripts/docker-compose.yml -f scripts/docker-compose.dev.yml u
 
 ---
 
-## Free Deployment Options Comparison
+## Completely Free, No-Card Deployment
 
-| Platform | Free Tier | Best For | Database | Cache | Queue |
-|----------|-----------|----------|----------|-------|-------|
-| **Railway.app** | $5/month credits | Full-stack apps | ✅ PostgreSQL | ✅ Redis | ✅ RabbitMQ |
-| **Render.com** | Limited free | Simple apps | ✅ PostgreSQL | ✅ Redis | ⚠️ Manual |
-| **Fly.io** | $3/month + credits | Containerized apps | ✅ PostgreSQL | ✅ Redis | ⚠️ Manual |
-| **Azure Free** | $200 for 30 days | Enterprise users | ✅ Supported | ✅ Supported | ✅ Supported |
-| **GCP Free Tier** | Always free (limits) | Learning/testing | ✅ Supported | ✅ Supported | ✅ Supported |
-| **Oracle Cloud** | Always free (2 VM) | Long-term projects | ✅ Supported | ✅ Supported | ✅ Supported |
+If you do not have a credit card and want a deployment path with no subscription, no trial, and no hosted service signup requiring payment details, the practical option is to self-host on hardware you already own and expose it with a free tunnel.
+
+### What this uses
+- Your own PC, laptop, or spare home server
+- Docker Compose for the API, PostgreSQL, Redis, and RabbitMQ
+- Cloudflare Tunnel or Tailscale Funnel to publish the app publicly
+- Cloudinary is optional because the API falls back to local uploads if those env vars are absent
+
+### What this avoids
+- No managed cloud account with billing attached
+- No card-required free tier
+- No paid subscription
+- No trial expiration
+
+### Roadmap
+
+#### Phase 1: Prepare the host machine
+1. Pick a machine that can stay on when the app should be available.
+2. Install Docker Desktop.
+3. Clone this repository.
+4. Verify the stack starts locally with the existing compose files.
+
+#### Phase 2: Start the stack locally
+1. Bring up the API, PostgreSQL, Redis, and RabbitMQ.
+2. Confirm the API is reachable on its local port.
+3. Confirm Swagger and SignalR work on localhost.
+
+#### Phase 3: Expose it publicly for free
+1. Create a free Cloudflare account.
+2. Install `cloudflared` on the host machine.
+3. Create a tunnel to the local API port.
+4. Map a public hostname to that tunnel.
+5. Point the frontend to the public hostname.
+
+#### Phase 4: Keep it running
+1. Set Docker to start on boot.
+2. Set the tunnel client to start on boot.
+3. Back up the PostgreSQL volume regularly.
+4. Watch logs, disk usage, and memory usage.
+
+### Tradeoffs
+- Completely free
+- No card required
+- Uses your current Docker-based architecture
+- Availability depends on your own machine and internet connection
+- Not ideal for a production service that must be online 24/7
 
 ---
 
-## Recommended: Railway.app
+## Free Deployment Options Comparison
 
-**Why Railway?** Best free tier for full-stack apps, easy deployment, supports all your dependencies.
+| Platform | No card required | Best For | Database | Cache | Queue |
+|----------|------------------|----------|----------|-------|-------|
+| **Self-hosted + Cloudflare Tunnel** | ✅ Yes | Truly free personal deployment | ✅ PostgreSQL in Docker | ✅ Redis in Docker | ✅ RabbitMQ in Docker |
+| **Railway.app** | ❌ No | Full-stack apps | ✅ PostgreSQL | ✅ Redis | ✅ RabbitMQ |
+| **Render.com** | ❌ No | Simple apps | ✅ PostgreSQL | ✅ Redis | ⚠️ Manual |
+| **Fly.io** | ❌ No | Containerized apps | ✅ PostgreSQL | ✅ Redis | ⚠️ Manual |
+| **Azure Free** | ❌ No | Enterprise users | ✅ Supported | ✅ Supported | ✅ Supported |
+| **GCP Free Tier** | ❌ No | Learning/testing | ✅ Supported | ✅ Supported | ✅ Supported |
+| **Oracle Cloud** | ❌ No | Long-term projects | ✅ Supported | ✅ Supported | ✅ Supported |
+
+---
+
+## Recommended For Your Constraint: Self-Hosted + Cloudflare Tunnel
+
+**Why this?** It is the only option that is fully free, requires no card, and works with your current architecture without a rewrite.
 
 ### Step-by-Step Roadmap
 
 #### Phase 1: Preparation (30 minutes)
 
-**1.1 Create Railway Account**
-- Visit https://railway.app
-- Sign up with GitHub account (recommended for easy integration)
-- Connect your GitHub repository
+**1.1 Choose the host machine**
+- Use a PC, laptop, or spare server that can stay on.
+- Make sure Docker has enough disk and memory.
+- Keep the machine on a stable network.
 
-**1.2 Prepare Repository**
+**1.2 Prepare the repository**
 ```bash
 # Ensure your repo is clean and pushed
 git add .
-git commit -m "Prepare for Railway deployment"
+git commit -m "Prepare for self-hosted deployment"
 git push origin main
 ```
 
-**1.3 Add Railway Configuration Files**
+**1.3 Verify local startup**
+- Run the compose stack.
+- Confirm the API starts without errors.
+- Confirm chat and SignalR work locally before exposing anything.
 
-Create `.railway/config.yml` in your project root:
-```yaml
-builder: nixpacks
-variables:
-  - name: NIXPACKS_BUILD_CMD
-    value: "dotnet publish -c Release -o /app/publish"
-```
+#### Phase 2: Run the app locally (20 minutes)
 
-Create `Dockerfile` if not present (or update the existing one):
-```dockerfile
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-WORKDIR /app
+**2.1 Bring up the containers**
+- Start the API, PostgreSQL, Redis, and RabbitMQ containers.
+- Keep the stack in one local Docker network.
 
-COPY ["src/ChatApplication.API/ChatApplication.API.csproj", "src/ChatApplication.API/"]
-COPY ["src/ChatApplication.Core/ChatApplication.Core.csproj", "src/ChatApplication.Core/"]
-COPY ["src/ChatApplication.Infrastructure/ChatApplication.Infrastructure.csproj", "src/ChatApplication.Infrastructure/"]
-COPY ["src/ChatApplication.Shared/ChatApplication.Shared.csproj", "src/ChatApplication.Shared/"]
-COPY ["src/ChatApplication.Client/ChatApplication.Client.csproj", "src/ChatApplication.Client/"]
+**2.2 Confirm the endpoints**
+- API should answer on localhost.
+- Swagger should load.
+- The chat client should connect and send messages.
 
-RUN dotnet restore "src/ChatApplication.API/ChatApplication.API.csproj"
+#### Phase 3: Expose it publicly with a free tunnel (15 minutes)
 
-COPY . .
-RUN dotnet publish "src/ChatApplication.API/ChatApplication.API.csproj" -c Release -o /app/publish
+**3.1 Create a free Cloudflare account**
+- Cloudflare's free tunnel path normally does not require a card.
+- If you already own a domain, point it there.
+- If not, use the tunnel hostname for a test deployment.
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0
-WORKDIR /app
-COPY --from=build /app/publish .
+**3.2 Install `cloudflared`**
+- Install the tunnel client on the host machine.
+- Authenticate it to your Cloudflare account.
 
-ENV ASPNETCORE_URLS=http://+:8080
-EXPOSE 8080
+**3.3 Create the tunnel**
+- Route the public hostname to your local API port.
+- Keep the tunnel as the public entry point.
 
-ENTRYPOINT ["dotnet", "ChatApplication.API.dll"]
-```
+**3.4 Update the app URLs**
+- Point the frontend to the public tunnel URL.
+- Keep service-to-service communication on the local Docker network.
 
-#### Phase 2: Deploy Services (20 minutes)
+#### Phase 4: Make it persistent (10 minutes)
 
-**2.1 Log in to Railway Dashboard**
-- Go to https://railway.app/dashboard
-- Click "New Project"
+**4.1 Start on boot**
+- Configure Docker Desktop or Docker Engine to start with Windows.
+- Configure the tunnel client to start with Windows.
 
-**2.2 Add PostgreSQL Database**
-- Click "+ Add"
-- Select "PostgreSQL"
-- Railway auto-generates connection string (save it)
+**4.2 Protect the data**
+- Back up the PostgreSQL volume.
+- Store secrets locally outside the repo.
 
-**2.3 Add Redis**
-- Click "+ Add"
-- Select "Redis"
-- Railway auto-generates connection string
+#### Phase 5: Keep it healthy (ongoing)
 
-**2.4 Add RabbitMQ**
-- Click "+ Add"
-- Select "RabbitMQ"
-- Railway auto-generates connection
+**5.1 Check it from another network**
+- Open the public URL from a phone on mobile data.
+- Confirm login, chat, reconnect, and refresh behavior.
 
-**2.5 Deploy Your App**
-- Click "+ Add"
-- Select "GitHub Repo"
-- Select your ChatApplication repo
-- Choose deployment branch (main)
-- Railway auto-detects .NET project
-
-#### Phase 3: Configure Environment Variables (10 minutes)
-
-**3.1 In Railway Dashboard, set these variables:**
-
-```
-ConnectionStrings__DefaultConnection = ${{ Postgres.DATABASE_URL }}
-RedisSettings__ConnectionString = ${{ Redis.REDIS_URL }}
-RabbitMqSettings__Host = ${{ RabbitMQ.RABBITMQ_HOST }}
-RabbitMqSettings__Username = ${{ RabbitMQ.RABBITMQ_DEFAULT_USER }}
-RabbitMqSettings__Password = ${{ RabbitMQ.RABBITMQ_DEFAULT_PASS }}
-JwtSettings__Secret = YourSecureJwtSecretHere123!@#
-ASPNETCORE_ENVIRONMENT = Production
-ASPNETCORE_URLS = http://+:8080
-```
-
-**3.2 Verify Service Links**
-- Railway automatically injects environment variables
-- Services automatically discover each other
-
-#### Phase 4: Deploy & Monitor (Automatic)
-
-**4.1 Deployment**
-- Push to your repo → Railway auto-builds & deploys
-- Monitor logs in Railway dashboard
-- Get public URL (e.g., `https://chat-app-prod.up.railway.app`)
-
-**4.2 Database Migration**
-```bash
-# Connect via Railway CLI
-railway run dotnet ef database update
-```
-
-**4.3 Access Your App**
-- Frontend: `https://your-railway-url.up.railway.app`
-- Swagger API: `https://your-railway-url.up.railway.app/swagger`
-
----
-
-## Alternative: Render.com
-
-**Why Render?** Easy free tier, good documentation, simple deployment.
-
-### Deployment Roadmap (45 minutes)
-
-#### Step 1: Account Setup
-- Visit https://render.com
-- Sign up with GitHub
-- Connect repository
-
-#### Step 2: Deploy PostgreSQL
-- Create → PostgreSQL Database
-- Name: `chat-db`
-- Plan: Free tier
-- Copy connection string
-
-#### Step 3: Deploy Redis
-- Create → Redis
-- Name: `chat-redis`
-- Plan: Free tier
-- Copy connection string
-
-#### Step 4: Deploy Web Service
-- Create → Web Service
-- Connect to your GitHub repo
-- Build command: `dotnet publish -c Release -o /app/publish`
-- Start command: `dotnet ChatApplication.API.dll`
-
-#### Step 5: Environment Variables
-Add in Render dashboard:
-```
-ConnectionStrings__DefaultConnection=your-postgres-url
-RedisSettings__ConnectionString=your-redis-url
-JwtSettings__Secret=YourSecret123!
-ASPNETCORE_ENVIRONMENT=Production
-```
-
-#### Step 6: Deploy
-- Click "Deploy"
-- Monitor logs
-- Get public URL
-
----
-
-## Alternative: Fly.io
-
-**Why Fly.io?** Excellent for containerized apps, global deployment, good free credits.
-
-### Deployment Roadmap (1 hour)
-
-#### Step 1: Setup
-```bash
-# Install Fly CLI
-curl https://fly.io/install.sh | sh
-
-# Login
-fly auth login
-
-# Create app
-fly launch --name chat-app --builder dockerfile
-```
-
-#### Step 2: Configure fly.toml
-```toml
-app = "chat-app"
-primary_region = "iad"
-
-[build]
-  dockerfile = "Dockerfile"
-
-[env]
-  ASPNETCORE_ENVIRONMENT = "Production"
-  ASPNETCORE_URLS = "http://+:8080"
-
-[[services]]
-  protocol = "tcp"
-  internal_port = 8080
-  processes = ["app"]
-  
-  [services.concurrency]
-    type = "connections"
-    hard_limit = 1000
-    soft_limit = 500
-
-  [[services.ports]]
-    port = 80
-    handlers = ["http"]
-    force_https = true
-
-  [[services.ports]]
-    port = 443
-    handlers = ["tls", "http"]
-```
-
-#### Step 3: Add Services with Fly Postgres
-```bash
-# Create PostgreSQL
-fly postgres create --name chat-db
-
-# Create Redis
-fly redis create --name chat-redis
-```
-
-#### Step 4: Link Services
-```bash
-fly postgres attach chat-db
-fly redis attach chat-redis
-```
-
-#### Step 5: Set Secrets
-```bash
-fly secrets set JwtSettings__Secret="YourSecret123!"
-fly secrets set RabbitMqSettings__Host="rabbitmq-service"
-```
-
-#### Step 6: Deploy
-```bash
-fly deploy
-fly status
-fly logs
-```
-
----
-
-## Free Tier Limitations & Costs
-
-| Platform | Free Tier | Auto-Sleep? | Notes |
-|----------|-----------|------------|-------|
-| Railway | $5/month | No | Enough for small project for ~2-3 months |
-| Render | Very limited | Yes (after 15 min) | Great for demo/testing |
-| Fly.io | $3/month + credits | No | Best for long-term |
-| Azure | $200/30 days | No | Expires after 30 days |
-| GCP | Always free tier | No | Limited resources |
-| Oracle Cloud | 2 VMs always free | No | Best for VMs |
-
----
-
-## Production Checklist
-
-Before deploying to production:
-
-- [ ] Update `appsettings.Production.json`
-- [ ] Set strong JWT secret
-- [ ] Enable HTTPS/SSL
-- [ ] Configure CORS properly
-- [ ] Set up database backups
-- [ ] Configure logging/monitoring
-- [ ] Test SignalR connections
-- [ ] Test real-time chat functionality
-- [ ] Set up CI/CD pipeline
-- [ ] Monitor resource usage
+**5.2 Watch the host**
+- Monitor disk space.
+- Monitor RAM usage.
+- Check logs if chat disconnects.
 
 ---
 
 ## Environment Variables
 
-### Required Variables
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `ConnectionStrings__DefaultConnection` | PostgreSQL connection string | `Server=localhost;Database=chat;` |
-| `JwtSettings__Secret` | JWT signing secret (min 32 chars) | `YourVerySecureSecretKey123!@#$%` |
-| `RedisSettings__ConnectionString` | Redis connection string | `localhost:6379` |
-| `RabbitMqSettings__Host` | RabbitMQ hostname | `localhost` |
-| `ASPNETCORE_ENVIRONMENT` | Environment name | `Production` |
-| `ASPNETCORE_URLS` | URL binding | `http://+:8080` |
+Use local values instead of cloud dashboard variables:
 
-### Optional Variables
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `RabbitMqSettings__Username` | RabbitMQ username | `guest` |
-| `RabbitMqSettings__Password` | RabbitMQ password | `guest` |
-| `RedisSettings__Password` | Redis password | (empty) |
-| `Logging__LogLevel__Default` | Log level | `Information` |
-
----
+```
+ConnectionStrings__DefaultConnection = Host=postgres;Port=5432;Database=chatapp;Username=chatuser;Password=chatpassword;Include Error Detail=true
+RedisSettings__ConnectionString = redis:6379
+RabbitMqSettings__Host = rabbitmq
+JwtSettings__Secret = YourStrongLocalSecretHere
+ASPNETCORE_ENVIRONMENT = Production
+ASPNETCORE_URLS = http://+:5000
+```
 
 ## Troubleshooting
 
-### Build Failures
-```bash
-# Check .NET version compatibility
-dotnet --version  # Should be 8.0+
+### Tunnel failures
+- Check the tunnel client status.
+- Restart `cloudflared` and confirm the hostname resolves.
 
-# Clear build cache
-dotnet clean
-rm -rf bin obj
+### Docker failures
+- Check container status with `docker ps`.
+- Read logs for the API and dependencies.
 
-# Try local build first
-dotnet publish -c Release
-```
+### SignalR issues
+- Confirm the tunnel uses HTTPS.
+- Confirm the frontend points to the public hostname, not localhost.
+- Confirm Redis is still running if you use any scale-out behavior.
 
-### Database Connection Issues
-```bash
-# Verify connection string format
-# PostgreSQL: Server=host;Port=5432;Database=chat;Username=user;Password=pass;
-
-# Test connection
-dotnet user-secrets set "ConnectionStrings:DefaultConnection" "your-connection-string"
-dotnet ef database validate
-```
-
-### SignalR Real-Time Issues
-- Ensure WebSocket support is enabled on hosting platform
-- Check CORS configuration allows SignalR connections
-- Verify Redis is properly configured for Scale-Out
-
-### Memory/Resource Issues
-- Monitor deployment dashboard
-- Upgrade to paid tier if hitting limits
-- Consider splitting services into microservices
-
----
-
-## Recommended Deployment Path for This Project
-
-**For Development/Demo:** Render.com (easiest, free tier)
-**For Production:** Railway.app ($5/month covers full stack)
-**For Enterprise:** Azure (with initial credits) or GCP
-
-Start with Render for testing, migrate to Railway when ready for production.
+### Database issues
+- Confirm the PostgreSQL volume is mounted.
+- Confirm the connection string matches your compose service name.
+- Restore from backup if the local disk is damaged.
