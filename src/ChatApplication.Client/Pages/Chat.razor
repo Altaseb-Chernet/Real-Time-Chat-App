@@ -7,18 +7,25 @@
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
-<PageTitle>ChatApp</PageTitle>
+<PageTitle>Lyra Chat</PageTitle>
+
+<div class="chat-app" @onpointerdown="OnPointerActivity">
+
+<div class="sidebar-backdrop @(sidebarOpen ? "visible" : "")" @onclick="CloseSidebar" aria-hidden="true"></div>
 
 <div class="chat-layout">
 
     <!-- ── Sidebar ──────────────────────────────────────── -->
-    <aside class="sidebar">
+    <aside class="sidebar @(sidebarOpen ? "is-open" : "")">
         <div class="sidebar-top">
-            <div class="sidebar-logo">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                </svg>
-                ChatApp
+            <div class="sidebar-brand-row">
+                <div class="sidebar-logo">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    Lyra
+                </div>
+                <button type="button" class="icon-btn sidebar-close-btn" @onclick="CloseSidebar" aria-label="Close menu" title="Close">✕</button>
             </div>
             <div class="sidebar-search">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -30,12 +37,12 @@
 
         <!-- Tabs -->
         <div class="sidebar-tabs">
-            <button class="stab @(State.CurrentView == AppState.ViewMode.Room ? "active" : "")"
-                    @onclick="() => State.CurrentView = AppState.ViewMode.Room">
+            <button type="button" class="stab @(State.CurrentView == AppState.ViewMode.Room ? "active" : "")"
+                    @onclick="@(() => { CloseSidebar(); State.CurrentView = AppState.ViewMode.Room; })">
                 👥 Rooms
             </button>
-            <button class="stab @(State.CurrentView == AppState.ViewMode.DM ? "active" : "")"
-                    @onclick="() => State.CurrentView = AppState.ViewMode.DM">
+            <button type="button" class="stab @(State.CurrentView == AppState.ViewMode.DM ? "active" : "")"
+                    @onclick="@(() => { CloseSidebar(); State.CurrentView = AppState.ViewMode.DM; })">
                 💬 DMs
                 @if (State.TotalUnreadDms > 0)
                 {
@@ -79,7 +86,7 @@
                     var unread = State.UnreadDms.TryGetValue(user.UserId, out var u) ? u : 0;
                     var isActive = State.ActiveDmUserId == user.UserId && State.CurrentView == AppState.ViewMode.DM;
                     <div class="room-item @(isActive ? "active" : "")"
-                         @onclick="() => OpenDm(user)">
+                         @onclick="async () => await OpenDm(user)">
                         <div class="dm-avatar">@AvatarInitial(user.Username)
                             <span class="status-dot @user.Status.ToLower()"></span>
                         </div>
@@ -113,6 +120,14 @@
 
     <!-- ── Main ─────────────────────────────────────────── -->
     <main class="chat-main">
+        <div class="mobile-toolbar">
+            <button type="button" class="icon-btn mobile-menu-btn" @onclick="OpenSidebar" aria-label="Open menu" title="Menu">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>
+                </svg>
+            </button>
+            <span class="mobile-toolbar-title">Lyra</span>
+        </div>
         @if (State.CurrentView == AppState.ViewMode.Room && State.ActiveRoomId == null)
         {
             <div class="empty-state">
@@ -162,6 +177,14 @@
                 <div class="chat-header-right">
                     @if (State.CurrentView == AppState.ViewMode.Room)
                     {
+                        @if (IsRoomCreator)
+                        {
+                            <button class="icon-btn danger" @onclick="OpenDeleteRoomModal" title="Delete room permanently">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                    <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                </svg>
+                            </button>
+                        }
                         <button class="icon-btn" @onclick="RefreshMessages" title="Refresh">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <polyline points="23 4 23 10 17 10"/>
@@ -362,7 +385,7 @@
             {
                 foreach (var user in State.Users)
                 {
-                    <div class="member-item" @onclick="() => OpenDmFromPanel(user)" title="Send DM">
+                    <div class="member-item" @onclick="async () => await OpenDmFromPanel(user)" title="Send DM">
                         <div class="member-avatar">@AvatarInitial(user.Username)
                             <span class="status-dot @user.Status.ToLower()"></span>
                         </div>
@@ -376,6 +399,28 @@
         </div>
     </aside>
 </div>
+</div>
+
+<!-- Delete room -->
+@if (showDeleteRoomModal)
+{
+    <div class="modal-overlay" @onclick="CloseDeleteRoomModal">
+        <div class="modal modal-danger" @onclick:stopPropagation>
+            <h3>Delete this room?</h3>
+            <p class="modal-hint">This removes the room and its message history for everyone. You cannot undo this.</p>
+            @if (!string.IsNullOrEmpty(deleteRoomError))
+            {
+                <div class="auth-error">@deleteRoomError</div>
+            }
+            <div class="modal-actions">
+                <button class="btn-ghost" type="button" @onclick="CloseDeleteRoomModal" disabled="@deleteRoomBusy">Cancel</button>
+                <button class="btn-danger" type="button" @onclick="ConfirmDeleteRoom" disabled="@deleteRoomBusy">
+                    @(deleteRoomBusy ? "Deleting…" : "Delete room")
+                </button>
+            </div>
+        </div>
+    </div>
+}
 
 <!-- New room modal -->
 @if (showNewRoomModal)

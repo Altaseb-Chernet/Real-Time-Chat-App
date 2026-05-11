@@ -1,3 +1,4 @@
+using System.Threading;
 using ChatApplication.Client.Models;
 using ChatApplication.Client.Services;
 using Microsoft.AspNetCore.Components;
@@ -26,6 +27,18 @@ public partial class Chat : IAsyncDisposable
     ElementReference inputRef;
     System.Timers.Timer? typingTimer;
 
+    bool sidebarOpen;
+    bool showDeleteRoomModal;
+    bool deleteRoomBusy;
+    string? deleteRoomError;
+    bool _sessionLoopStarted;
+    CancellationTokenSource? _sessionCts;
+
+    public bool IsRoomCreator =>
+        State.CurrentView == AppState.ViewMode.Room
+        && State.ActiveRoom != null
+        && State.ActiveRoom.CreatedByUserId == Auth.UserId;
+
     record ToastItem(string Message, string Type, string Icon, bool Visible = true);
     List<ToastItem> toasts = new();
 
@@ -52,6 +65,12 @@ public partial class Chat : IAsyncDisposable
     {
         await Auth.InitAsync();
         if (!Auth.IsAuthenticated) { Nav.NavigateTo("/"); return; }
+        if (!Auth.IsSessionValid())
+        {
+            await Auth.ClearAuthOnlyAsync();
+            Nav.NavigateTo("/");
+            return;
+        }
 
         State.OnChange += StateHasChanged;
 
@@ -72,6 +91,101 @@ public partial class Chat : IAsyncDisposable
 
         await Hub.ConnectAsync();
         State.Notify();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _sessionLoopStarted) return;
+        _sessionLoopStarted = true;
+        _sessionCts = new CancellationTokenSource();
+        _ = RunSessionWatchAsync(_sessionCts.Token);
+        await Task.CompletedTask;
+    }
+
+    async Task RunSessionWatchAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(45), ct);
+                if (Auth.IsAuthenticated && !Auth.IsSessionValid())
+                {
+                    await Auth.ClearAuthOnlyAsync();
+                    await InvokeAsync(() =>
+                    {
+                        Toast("Signed out — session expired or idle timeout.", "info");
+                        Nav.NavigateTo("/");
+                    });
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException) { /* normal */ }
+    }
+
+    async Task OnPointerActivity(PointerEventArgs _)
+    {
+        Auth.TouchActivity();
+        await Auth.TouchActivityPersistedAsync();
+    }
+
+    void OpenSidebar()
+    {
+        sidebarOpen = true;
+        StateHasChanged();
+    }
+
+    void CloseSidebar()
+    {
+        sidebarOpen = false;
+        StateHasChanged();
+    }
+
+    void OpenDeleteRoomModal()
+    {
+        deleteRoomError = null;
+        showDeleteRoomModal = true;
+        StateHasChanged();
+    }
+
+    void CloseDeleteRoomModal()
+    {
+        if (deleteRoomBusy) return;
+        showDeleteRoomModal = false;
+        StateHasChanged();
+    }
+
+    async Task ConfirmDeleteRoom()
+    {
+        if (State.ActiveRoomId == null || !IsRoomCreator) return;
+        deleteRoomBusy = true;
+        deleteRoomError = null;
+        StateHasChanged();
+        var id = State.ActiveRoomId;
+        try
+        {
+            await Hub.LeaveRoomAsync(id);
+            await Api.DeleteRoomAsync(id);
+            State.ActiveRoomId = null;
+            State.RoomMessages.Remove(id);
+            State.RoomMembers.Remove(id);
+            State.UnreadRooms.Remove(id);
+            State.Rooms = await Api.GetRoomsAsync();
+            showDeleteRoomModal = false;
+            Toast("Room deleted.", "success");
+            State.Notify();
+        }
+        catch (Exception ex)
+        {
+            deleteRoomError = ex.Message ?? "Could not delete room.";
+            Toast(deleteRoomError, "error");
+        }
+        finally
+        {
+            deleteRoomBusy = false;
+            StateHasChanged();
+        }
     }
 
     // ── Message handlers ──────────────────────────────────
@@ -131,6 +245,7 @@ public partial class Chat : IAsyncDisposable
         catch { /* ignore; UI can still work */ }
 
         await Hub.JoinRoomAsync(room.Id);
+        CloseSidebar();
         State.Notify();
         await ScrollToBottom();
         await FocusInput();
@@ -179,6 +294,7 @@ public partial class Chat : IAsyncDisposable
     // ── DM ────────────────────────────────────────────────
     async Task OpenDm(UserStatusDto user)
     {
+        CloseSidebar();
         State.CurrentView    = AppState.ViewMode.DM;
         State.ActiveDmUserId = user.UserId;
         State.ActiveDmUsername = user.Username;
@@ -507,6 +623,9 @@ public partial class Chat : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        try { _sessionCts?.Cancel(); } catch { /* ignore */ }
+        _sessionCts?.Dispose();
+        _sessionCts = null;
         State.OnChange -= StateHasChanged;
         Hub.OnMessage          -= OnMessage;
         Hub.OnPrivateMessage   -= OnPrivateMessage;
