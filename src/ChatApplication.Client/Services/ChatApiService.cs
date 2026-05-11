@@ -33,6 +33,14 @@ public class ChatApiService
     public async Task LeaveRoomAsync(string roomId)
         => await _http.PostAsync($"/api/chat/rooms/{roomId}/leave", null);
 
+    /// <summary>Deletes the room (creator only, enforced on server).</summary>
+    public async Task DeleteRoomAsync(string roomId)
+    {
+        var res = await _http.DeleteAsync($"/api/chat/rooms/{roomId}");
+        if (!res.IsSuccessStatusCode)
+            throw new Exception(await ReadApiErrorAsync(res));
+    }
+
     public async Task<List<RoomMemberDto>> GetRoomMembersAsync(string roomId)
     {
         var res = await _http.GetAsync($"/api/chat/rooms/{roomId}/members");
