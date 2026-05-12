@@ -1,6 +1,6 @@
 # ChatApplication
 
-ChatApplication is a real-time chat platform built with ASP.NET Core, SignalR, Redis, RabbitMQ, and PostgreSQL. It is designed to support live message delivery, user presence, and scalable background messaging while keeping the application split into clear API, core, infrastructure, and shared layers.
+ChatApplication is a **distributed real-time chat system** built with ASP.NET Core, SignalR, Redis, RabbitMQ, and PostgreSQL. It demonstrates core distributed system patterns including service separation, asynchronous messaging, caching layers, and event-driven architecture to handle concurrent users and high-throughput message delivery across multiple services.
 
 ## What This Repository Contains
 
@@ -12,9 +12,17 @@ This solution is organized so each project has a focused responsibility:
 - `ChatApplication.Shared` provides DTOs, enums, and response contracts shared across projects.
 - `ChatApplication.Client` is the browser client that consumes the API and connects to SignalR.
 
-## How It Works
+## Distributed System Architecture
 
-The API handles authentication, room management, message persistence, and real-time delivery. SignalR is used for instant updates so clients see new messages and presence changes without polling. Redis supports fast shared caching, RabbitMQ handles asynchronous messaging workflows, and PostgreSQL stores the application data.
+This system is built as a distributed architecture where:
+
+- **API Service** handles authentication, room management, and message persistence; can scale horizontally behind a load balancer.
+- **SignalR Hub** manages real-time bidirectional communication and presence broadcasts to connected clients; scales using Redis backplane for cross-instance messaging.
+- **Message Queue (RabbitMQ)** decouples message processing from ingestion, enabling async workflows for notifications, archiving, and other background tasks.
+- **Cache Layer (Redis)** reduces database load by caching user profiles, room metadata, and session data; shared across all API instances.
+- **Database (PostgreSQL)** is the single source of truth for all persisted chat data, user accounts, and room metadata.
+
+Each service runs independently and communicates via well-defined protocols (HTTP REST, WebSocket SignalR, AMQP messaging), allowing them to scale and fail independently.
 
 ## Local Run
 
