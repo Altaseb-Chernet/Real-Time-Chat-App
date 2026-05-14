@@ -10,9 +10,10 @@ services:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:5000
       - ConnectionStrings__DefaultConnection=Host=localhost;Port=5432;Database=chatapp;Username=postgres;Password=altaseb;Include Error Detail=true
-      - JwtSettings__Secret=dev-super-secret-key-for-local-compose-only
+      - JwtSettings__Secret=bbd8dab53ffc6dd9ef781cc176a2aaef3ce2e15a292584f3112fac2010bfccee
       - JwtSettings__Issuer=ChatApplication
       - JwtSettings__Audience=ChatApplication.Client
+      - JwtSettings__ExpiryMinutes=60  
       - RedisSettings__ConnectionString=redis:6379
       - RabbitMqSettings__Host=rabbitmq
       - Cloudinary__CloudName=${CLOUDINARY_CLOUD_NAME}
