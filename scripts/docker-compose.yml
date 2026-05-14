@@ -9,7 +9,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:5000
-      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=chatapp;Username=chatuser;Password=chatpassword;Include Error Detail=true
+      - ConnectionStrings__DefaultConnection=Host=localhost;Port=5432;Database=chatapp;Username=postgres;Password=altaseb;Include Error Detail=true
       - JwtSettings__Secret=dev-super-secret-key-for-local-compose-only
       - JwtSettings__Issuer=ChatApplication
       - JwtSettings__Audience=ChatApplication.Client
