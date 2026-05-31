@@ -18,7 +18,8 @@ public class MessageService : IMessageService
 
     public async Task<MessageResponse> SendMessageAsync(SendMessageRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Content))
+        // Allow empty text when a media attachment is present
+        if (string.IsNullOrWhiteSpace(request.Content) && string.IsNullOrWhiteSpace(request.MediaUrl))
             throw new AppException("Message content cannot be empty.");
 
         var room = await _chatRoomRepository.GetByIdAsync(request.RoomId)

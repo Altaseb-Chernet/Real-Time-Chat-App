@@ -1,0 +1,12 @@
+**/.git
+**/.gitignore
+**/.vs
+**/.vscode
+**/bin
+**/obj
+**/publish_debug
+**/publish_release
+**/*.user
+**/*.suo
+**/node_modules
+**/.env

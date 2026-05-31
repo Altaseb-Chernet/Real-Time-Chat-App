@@ -45,3 +45,11 @@ That starts the API together with PostgreSQL, Redis, and RabbitMQ. The API is ex
 - [API Documentation](docs/API_Documentation.md) for the available endpoints and SignalR hubs.
 - [Deployment Guide](docs/Deployment_Guide.md) for production deployment details.
 - [Quick Deployment Guide](docs/QUICK_DEPLOYMENT.md) for the fastest public-access setup.
+
+dotnet run --project src/ChatApplication.API/ChatApplication.API.csproj
+
+
+dotnet clean ChatApplication.sln
+dotnet restore ChatApplication.sln
+dotnet build ChatApplication.sln
+dotnet run --project src/ChatApplication.API/ChatApplication.API.csproj

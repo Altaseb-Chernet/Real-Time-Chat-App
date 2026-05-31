@@ -121,21 +121,23 @@ public static class ServiceExtensions
         var s = configuration.GetSection(nameof(RabbitMqSettings)).Get<RabbitMqSettings>()
             ?? new RabbitMqSettings();
 
-        services.AddSingleton<IConnection?>(_ =>
+        // RabbitMQ is optional — if the broker is unreachable the app still starts.
+        // RabbitMqConnection accepts IConnection? so null is a valid value here.
+        IConnection? rabbitConnection = null;
+        try
         {
-            try
+            rabbitConnection = new ConnectionFactory
             {
-                return new ConnectionFactory
-                {
-                    HostName               = s.Host,
-                    Port                   = s.Port,
-                    UserName               = s.Username,
-                    Password               = s.Password,
-                    DispatchConsumersAsync = true
-                }.CreateConnection();
-            }
-            catch { return null; }
-        });
+                HostName               = s.Host,
+                Port                   = s.Port,
+                UserName               = s.Username,
+                Password               = s.Password,
+                DispatchConsumersAsync = true
+            }.CreateConnection();
+        }
+        catch { /* broker unavailable — messaging features disabled */ }
+
+        services.AddSingleton<IConnection?>(_ => rabbitConnection);
 
         services.AddSingleton<RabbitMqConnection>();
         services.AddScoped<IMessagePublisher, MessagePublisher>();

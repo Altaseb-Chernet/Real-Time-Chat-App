@@ -1,4 +1,3 @@
-
 services:
   api:
     build:
@@ -9,36 +8,50 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
       - ASPNETCORE_URLS=http://+:5000
-      - ConnectionStrings__DefaultConnection=Host=localhost;Port=5432;Database=chatapp;Username=postgres;Password=altaseb;Include Error Detail=true
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=chatapp;Username=postgres;Password=altaseb;Include Error Detail=true
       - JwtSettings__Secret=bbd8dab53ffc6dd9ef781cc176a2aaef3ce2e15a292584f3112fac2010bfccee
       - JwtSettings__Issuer=ChatApplication
-      - JwtSettings__Audience=ChatApplication.Client
-      - JwtSettings__ExpiryMinutes=60  
+      - JwtSettings__Audience=ChatApplication
+      - JwtSettings__ExpiryMinutes=60
       - RedisSettings__ConnectionString=redis:6379
       - RabbitMqSettings__Host=rabbitmq
-      - Cloudinary__CloudName=${CLOUDINARY_CLOUD_NAME}
-      - Cloudinary__UploadPreset=${CLOUDINARY_UPLOAD_PRESET}
+      - RabbitMqSettings__Port=5672
+      - RabbitMqSettings__Username=guest
+      - RabbitMqSettings__Password=guest
+      - Cloudinary__CloudName=dlvrwud2y
+      - Cloudinary__ApiKey=536731941853732
+      - Cloudinary__ApiSecret=Ls8EhXPl8xqhcybYS930AZrpFg0
     depends_on:
-      - postgres
-      - redis
-      - rabbitmq
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+    restart: unless-stopped
 
   postgres:
     image: postgres:15
     environment:
       POSTGRES_DB: chatapp
-      POSTGRES_USER: chatuser
-      POSTGRES_PASSWORD: chatpassword
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: altaseb
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    restart: unless-stopped
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -48,6 +61,7 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
+    restart: unless-stopped
 
 volumes:
   postgres_data:
