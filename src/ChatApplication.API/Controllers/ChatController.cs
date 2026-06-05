@@ -199,6 +199,11 @@ public class ChatController : ControllerBase
     {
         var userId   = GetUserId();
         var response = await _messageService.EditMessageAsync(messageId, userId, body.Content);
+        
+        // Broadcast the edited message
+        await _hubContext.Clients.Group(RoomGroup(response.RoomId))
+                           .SendAsync(HubEvents.ReceiveMessage, response);
+                           
         return Ok(ApiResponse<MessageResponse>.Ok(response));
     }
 
@@ -210,7 +215,12 @@ public class ChatController : ControllerBase
     public async Task<IActionResult> DeleteMessage(string messageId)
     {
         var userId = GetUserId();
-        await _messageService.DeleteMessageAsync(messageId, userId);
+        var response = await _messageService.DeleteMessageAsync(messageId, userId);
+        
+        // Broadcast the deleted message (so clients can update UI to show it as deleted)
+        await _hubContext.Clients.Group(RoomGroup(response.RoomId))
+                           .SendAsync(HubEvents.ReceiveMessage, response);
+                           
         return NoContent();
     }
 

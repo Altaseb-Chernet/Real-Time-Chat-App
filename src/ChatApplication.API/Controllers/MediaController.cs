@@ -14,7 +14,6 @@ public class MediaController : ControllerBase
 {
     private readonly IConfiguration _config;
     private readonly IWebHostEnvironment _env;
-    private readonly HttpClient _http = new();
 
     public MediaController(IConfiguration config, IWebHostEnvironment env)
     {
@@ -30,7 +29,6 @@ public class MediaController : ControllerBase
             return BadRequest(ApiResponse<MediaUploadResult>.Fail("File is required."));
 
         // Cloudinary settings — read from Cloudinary:* section.
-        // Supports both signed (ApiKey + ApiSecret) and unsigned (UploadPreset) uploads.
         var cloudName    = _config["Cloudinary:CloudName"];
         var apiKey       = _config["Cloudinary:ApiKey"];
         var apiSecret    = _config["Cloudinary:ApiSecret"];
@@ -48,96 +46,62 @@ public class MediaController : ControllerBase
             return await SaveLocallyAsync(file);
         }
 
-        // Determine Cloudinary resource type.
-        var normalizedType = (file.ContentType ?? "").ToLowerInvariant();
-        var resourceType =
-            normalizedType.StartsWith("image/") ? "image" :
-            normalizedType.StartsWith("audio/") || normalizedType.StartsWith("video/") ? "video" :
-            "raw";
+        var rawContentType = (file.ContentType ?? "application/octet-stream").Trim();
+        var normalizedType = rawContentType.Split(';')[0].Trim().ToLowerInvariant();
 
-        var endpoint = $"https://api.cloudinary.com/v1_1/{cloudName}/{resourceType}/upload";
-
-        await using var stream = file.OpenReadStream();
-        using var form = new MultipartFormDataContent();
-        using var sc = new StreamContent(stream);
-        sc.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
-            file.ContentType ?? "application/octet-stream");
-        form.Add(sc, "file", file.FileName);
-
-        if (hasSignedConfig)
-        {
-            // Signed upload — no upload preset required.
-            var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
-            var signature = GenerateSignature(timestamp, apiSecret!);
-            form.Add(new StringContent(timestamp), "timestamp");
-            form.Add(new StringContent(apiKey!), "api_key");
-            form.Add(new StringContent(signature), "signature");
-        }
-        else
-        {
-            // Unsigned upload via upload preset.
-            form.Add(new StringContent(uploadPreset!), "upload_preset");
-        }
-
-        using var resp = await _http.PostAsync(endpoint, form);
-        var json = await resp.Content.ReadAsStringAsync();
-
-        if (!resp.IsSuccessStatusCode)
-            return StatusCode((int)resp.StatusCode,
-                ApiResponse<MediaUploadResult>.Fail($"Cloudinary upload failed: {json}"));
-
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-
-        var secureUrl = root.TryGetProperty("secure_url", out var su)
-            ? su.GetString()
-            : root.TryGetProperty("url", out var u) ? u.GetString() : null;
-
-        var publicId = root.TryGetProperty("public_id", out var pid) ? pid.GetString() : null;
-        var uploadedResourceType = root.TryGetProperty("resource_type", out var rt) ? rt.GetString() : null;
-
-        int? width    = root.TryGetProperty("width",    out var w) ? w.GetInt32()    : null;
-        int? height   = root.TryGetProperty("height",   out var h) ? h.GetInt32()    : null;
-        double? duration = root.TryGetProperty("duration", out var d) ? d.GetDouble() : null;
-
-        if (string.IsNullOrWhiteSpace(secureUrl) || string.IsNullOrWhiteSpace(publicId))
-            return StatusCode(502,
-                ApiResponse<MediaUploadResult>.Fail(
-                    "Cloudinary upload succeeded but response is missing secure_url/public_id."));
-
+        // Determine the derived media type for the client UI
         var derivedType =
             normalizedType.StartsWith("image/") ? "image" :
             normalizedType.StartsWith("video/") ? "video" :
             normalizedType.StartsWith("audio/") ? "audio" :
-            null;
+            "raw";
+
+        CloudinaryDotNet.Account account;
+        if (hasSignedConfig) 
+            account = new CloudinaryDotNet.Account(cloudName, apiKey, apiSecret);
+        else 
+            account = new CloudinaryDotNet.Account(cloudName);
+
+        var cloudinary = new CloudinaryDotNet.Cloudinary(account);
+
+        await using var stream = file.OpenReadStream();
+        var fileDesc = new CloudinaryDotNet.FileDescription(file.FileName, stream);
+
+        // Use ImageUploadParams with ResourceType = "auto" for ALL file types.
+        // Cloudinary's "auto" resource type detects and processes images, videos,
+        // audio, PDFs, and raw files correctly — no manual routing needed.
+        var uploadParams = new CloudinaryDotNet.Actions.AutoUploadParams
+        {
+            File = fileDesc
+        };
+        if (!hasSignedConfig && !string.IsNullOrWhiteSpace(uploadPreset))
+        {
+            uploadParams.UploadPreset = uploadPreset;
+        }
+
+        var uploadResult = await cloudinary.UploadAsync(uploadParams);
+
+        if (uploadResult.Error != null)
+        {
+            return StatusCode(502, ApiResponse<MediaUploadResult>.Fail($"Cloudinary upload failed: {uploadResult.Error.Message}"));
+        }
 
         var result = new MediaUploadResult
         {
-            PublicId  = publicId!,
-            Url       = secureUrl!,
-            MediaType = derivedType ?? uploadedResourceType ?? "raw",
+            PublicId  = uploadResult.PublicId,
+            Url       = uploadResult.SecureUrl?.ToString() ?? uploadResult.Url?.ToString() ?? string.Empty,
+            MediaType = derivedType,
             FileName  = file.FileName,
-            Bytes     = file.Length,
-            Width     = width,
-            Height    = height,
-            Duration  = duration
+            Bytes     = uploadResult.Bytes,
+            Width     = uploadResult.Width,
+            Height    = uploadResult.Height,
+            Duration  = null // Duration available only for video, but auto-type doesn't expose it directly
         };
 
         return Ok(ApiResponse<MediaUploadResult>.Ok(result));
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Generates a Cloudinary signed-upload signature:
-    /// SHA1("timestamp={ts}{apiSecret}")
-    /// </summary>
-    private static string GenerateSignature(string timestamp, string apiSecret)
-    {
-        var payload = $"timestamp={timestamp}{apiSecret}";
-        var hash = SHA1.HashData(Encoding.UTF8.GetBytes(payload));
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
 
     /// <summary>
     /// Saves the file to wwwroot/uploads and returns a local URL.
