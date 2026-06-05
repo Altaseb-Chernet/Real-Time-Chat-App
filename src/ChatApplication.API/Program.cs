@@ -55,7 +55,11 @@ app.UseSwaggerUI(c =>
     c.RoutePrefix = "swagger";
 });
 
-// ── Static files (Blazor WASM + uploads) ─────────────────────────────────────
+if (app.Environment.IsDevelopment())
+{
+    app.UseWebAssemblyDebugging();
+}
+
 app.UseBlazorFrameworkFiles();
 
 // Ensure audio/video files are served with correct MIME types
