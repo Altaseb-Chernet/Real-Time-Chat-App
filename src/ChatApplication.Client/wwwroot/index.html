@@ -1,10 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-    <meta name="theme-color" content="#070b12"/>
-    <title>Lyra Chat</title>
+    <meta name="theme-color" content="#0B0F1A"/>
+    <meta name="description" content="OrbitChat — A premium real-time distributed messaging platform for teams. Secure group chats, direct messages, file sharing, and voice notes."/>
+    <meta name="color-scheme" content="dark light"/>
+    <title>OrbitChat</title>
     <base href="/"/>
     <link rel="preconnect" href="https://fonts.googleapis.com"/>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -16,10 +18,19 @@
     <div id="app">
         <div class="splash">
             <div class="splash-logo">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="url(#orbit-grad)" stroke-width="1.5">
+                    <defs>
+                        <linearGradient id="orbit-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#6366F1"/>
+                            <stop offset="100%" stop-color="#8B5CF6"/>
+                        </linearGradient>
+                    </defs>
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    <circle cx="12" cy="10" r="1" fill="url(#orbit-grad)" stroke="none"/>
+                    <circle cx="8" cy="10" r="1" fill="url(#orbit-grad)" stroke="none"/>
+                    <circle cx="16" cy="10" r="1" fill="url(#orbit-grad)" stroke="none"/>
                 </svg>
-                <span>Lyra</span>
+                <span>OrbitChat</span>
             </div>
             <div class="splash-spinner"></div>
         </div>
@@ -29,8 +40,16 @@
         <a href="" class="reload">Reload</a>
         <a class="dismiss">🗙</a>
     </div>
+
+    <!-- Cropper.js for image editing -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
+
     <script src="js/helpers.js"></script>
     <script src="js/voice.js"></script>
+    <script src="js/uploader.js"></script>
+    <script src="js/imageEditor.js"></script>
+    <script src="js/interop.js"></script>
     <script src="_framework/blazor.webassembly.js"></script>
 </body>
 </html>

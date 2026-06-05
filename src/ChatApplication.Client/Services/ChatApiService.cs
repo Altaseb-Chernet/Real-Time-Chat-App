@@ -86,7 +86,11 @@ public class ChatApiService
     }
 
     public async Task DeleteMessageAsync(string messageId)
-        => await _http.DeleteAsync($"/api/chat/messages/{messageId}");
+    {
+        var res = await _http.DeleteAsync($"/api/chat/messages/{messageId}");
+        if (!res.IsSuccessStatusCode)
+            throw new Exception(await ReadApiErrorAsync(res));
+    }
 
     // ── Users ─────────────────────────────────────────────
     public async Task<List<UserStatusDto>> GetOnlineUsersAsync()

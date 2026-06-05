@@ -11,7 +11,7 @@ public class MessageRepository : GenericRepository<Message>, IMessageRepository
 
     public Task<List<Message>> GetByRoomAsync(string roomId, int skip, int take)
         => _dbSet
-            .Where(m => m.RoomId == roomId && !m.IsDeleted)
+            .Where(m => m.RoomId == roomId)
             .Include(m => m.Sender)
             .OrderByDescending(m => m.SentAt)
             .Skip(skip).Take(take)
@@ -27,6 +27,16 @@ public class MessageRepository : GenericRepository<Message>, IMessageRepository
         var message = await _dbSet.FindAsync(messageId);
         if (message is null) return;
         message.IsDeleted = true;
-        _dbSet.Update(message);
+        message.Content = "🚫 This message was deleted";
+        message.MediaUrl = null;
+        message.MediaType = null;
+        message.MediaName = null;
+        message.MediaBytes = null;
+        message.MediaPublicId = null;
+        
+        if (message.SentAt.Kind == DateTimeKind.Unspecified)
+            message.SentAt = DateTime.SpecifyKind(message.SentAt, DateTimeKind.Utc);
+        if (message.EditedAt.HasValue && message.EditedAt.Value.Kind == DateTimeKind.Unspecified)
+            message.EditedAt = DateTime.SpecifyKind(message.EditedAt.Value, DateTimeKind.Utc);
     }
 }
