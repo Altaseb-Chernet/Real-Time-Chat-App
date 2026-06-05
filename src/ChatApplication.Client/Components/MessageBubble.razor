@@ -22,7 +22,7 @@
                 }
                 @if (!string.IsNullOrEmpty(Msg.Content) && Msg.Content != Msg.MediaName)
                 {
-                    <div class="bubble-text">@Msg.Content</div>
+                    <div class="bubble-text">@RenderTextWithLinks()</div>
                 }
             }
 
@@ -81,6 +81,7 @@
     [Parameter] public EventCallback<string> OnDelete { get; set; }
     [Parameter] public EventCallback<string> OnCopy   { get; set; }
     [Parameter] public EventCallback<string> OpenRequested { get; set; }
+    [Parameter] public EventCallback<string> LinkClickRequested { get; set; }
 
     bool   showMenu;
     string menuX = "0px", menuY = "0px";
@@ -135,10 +136,9 @@
         else
         {
             builder.OpenElement(0, "a");
-            builder.AddAttribute(1, "href", url);
-            builder.AddAttribute(2, "target", "_blank");
-            builder.AddAttribute(3, "rel", "noopener");
-            builder.AddAttribute(4, "class", "media-doc");
+            builder.AddAttribute(1, "href", "javascript:void(0)");
+            builder.AddAttribute(2, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, _ => LinkClickRequested.InvokeAsync(url)));
+            builder.AddAttribute(3, "class", "media-doc");
             builder.OpenElement(5, "span");
             builder.AddAttribute(6, "class", "doc-icon");
             builder.AddContent(7, DocIcon(name));
@@ -155,6 +155,44 @@
             builder.CloseElement();
             builder.CloseElement();
             builder.CloseElement();
+        }
+    };
+
+    RenderFragment RenderTextWithLinks() => builder =>
+    {
+        var text = Msg.Content ?? "";
+        var regex = new System.Text.RegularExpressions.Regex(@"(https?://[^\s]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var matches = regex.Matches(text);
+        
+        if (matches.Count == 0)
+        {
+            builder.AddContent(0, text);
+            return;
+        }
+
+        int lastIndex = 0;
+        int seq = 0;
+        foreach (System.Text.RegularExpressions.Match match in matches)
+        {
+            if (match.Index > lastIndex)
+            {
+                builder.AddContent(seq++, text.Substring(lastIndex, match.Index - lastIndex));
+            }
+
+            var url = match.Value;
+            builder.OpenElement(seq++, "a");
+            builder.AddAttribute(seq++, "href", "javascript:void(0)");
+            builder.AddAttribute(seq++, "class", "chat-link");
+            builder.AddAttribute(seq++, "onclick", EventCallback.Factory.Create<MouseEventArgs>(this, _ => LinkClickRequested.InvokeAsync(url)));
+            builder.AddContent(seq++, url);
+            builder.CloseElement();
+
+            lastIndex = match.Index + match.Length;
+        }
+
+        if (lastIndex < text.Length)
+        {
+            builder.AddContent(seq++, text.Substring(lastIndex));
         }
     };
 
