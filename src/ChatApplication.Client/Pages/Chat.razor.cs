@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
+using System.Text.Json;
 
 namespace ChatApplication.Client.Pages;
 
@@ -22,7 +23,11 @@ public partial class Chat : IAsyncDisposable
     bool   sending;
     string uploadFileName = "";
     int    uploadPct;
+    string? pendingLinkUrl;
     bool   recording;
+    DateTime? recordingStartTime;
+    System.Timers.Timer? voiceTimer;
+    string voiceTimerString = "00:00";
     MediaUploadDraft? pendingMedia;
     ElementReference inputRef;
     System.Timers.Timer? typingTimer;
@@ -33,6 +38,7 @@ public partial class Chat : IAsyncDisposable
     string? deleteRoomError;
     bool _sessionLoopStarted;
     CancellationTokenSource? _sessionCts;
+    bool isDarkMode = true;
 
     public bool IsRoomCreator =>
         State.CurrentView == AppState.ViewMode.Room
@@ -45,6 +51,10 @@ public partial class Chat : IAsyncDisposable
     IEnumerable<ChatRoomDto> FilteredRooms => string.IsNullOrWhiteSpace(searchQuery)
         ? State.Rooms
         : State.Rooms.Where(r => r.Name.Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
+
+    IEnumerable<UserStatusDto> FilteredUsers => string.IsNullOrWhiteSpace(searchQuery)
+        ? State.Users.Where(u => u.UserId != Auth.UserId)
+        : State.Users.Where(u => u.UserId != Auth.UserId && u.Username.Contains(searchQuery, StringComparison.OrdinalIgnoreCase));
 
     List<string> TypingUsernames => State.CurrentView == AppState.ViewMode.Room && State.ActiveRoomId != null
         ? State.GetTypingUsers(State.ActiveRoomId)
@@ -91,10 +101,26 @@ public partial class Chat : IAsyncDisposable
 
         await Hub.ConnectAsync();
         State.Notify();
+
+        // Load theme preference
+        try
+        {
+            var theme = await JS.InvokeAsync<string>("orbitTheme.getTheme");
+            isDarkMode = theme != "light";
+        }
+        catch { /* JS not ready */ }
     }
+
+    private DotNetObjectReference<Chat>? _objRef;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender)
+        {
+            _objRef = DotNetObjectReference.Create(this);
+            try { await JS.InvokeVoidAsync("orbitResizer.init"); } catch { }
+            try { await JS.InvokeVoidAsync("orbitInterop.initFilePicker", "file-picker", _objRef, "/api/media/upload"); } catch { }
+        }
         if (!firstRender || _sessionLoopStarted) return;
         _sessionLoopStarted = true;
         _sessionCts = new CancellationTokenSource();
@@ -192,7 +218,9 @@ public partial class Chat : IAsyncDisposable
     void OnMessage(MessageDto msg)
     {
         var list = State.GetRoomMessages(msg.RoomId);
-        if (!list.Any(m => m.Id == msg.Id)) list.Add(msg);
+        var idx = list.FindIndex(m => m.Id == msg.Id);
+        if (idx >= 0) list[idx] = msg;
+        else list.Add(msg);
 
         if (msg.RoomId != State.ActiveRoomId || State.CurrentView != AppState.ViewMode.Room)
         {
@@ -438,15 +466,16 @@ public partial class Chat : IAsyncDisposable
     // ── Delete ────────────────────────────────────────────
     async Task DeleteMsg(string msgId)
     {
-        await Api.DeleteMessageAsync(msgId);
-        var list = State.GetRoomMessages(State.ActiveRoomId!);
-        var idx  = list.FindIndex(m => m.Id == msgId);
-        if (idx >= 0)
+        try
         {
-            var old = list[idx];
-            list[idx] = old with { IsDeleted = true, Content = "🚫 This message was deleted" };
+            await Api.DeleteMessageAsync(msgId);
+            // We no longer manually update it here because the server will broadcast 
+            // the deleted message back to us via SignalR (which replaces it locally).
         }
-        State.Notify();
+        catch (Exception ex)
+        {
+            Toast("Could not delete message: " + ex.Message, "error");
+        }
     }
 
     async Task CopyMsg(string text)
@@ -455,40 +484,73 @@ public partial class Chat : IAsyncDisposable
         Toast("Copied!", "success");
     }
 
-    // ── File upload ───────────────────────────────────────
+    // ── File upload (via JS Interop) ──────────────────────
 
-    async Task HandleFileUpload(InputFileChangeEventArgs e)
+    [JSInvokable]
+    public void OnUploadStarted(string fileName)
     {
-        var file = e.File;
-        if (file.Size > 50 * 1024 * 1024) { Toast("File exceeds 50 MB", "error"); return; }
-
-        uploading      = true;
-        uploadFileName = file.Name;
-        uploadPct      = 0;
+        uploading = true;
+        uploadFileName = fileName;
+        uploadPct = 0;
         StateHasChanged();
+    }
 
+    [JSInvokable]
+    public void OnUploadProgress(int pct)
+    {
+        uploadPct = pct;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void OnUploadFinished(System.Text.Json.JsonElement resultElement)
+    {
         try
         {
-            await using var stream = file.OpenReadStream(50 * 1024 * 1024);
-            var result = await Api.UploadMediaAsync(stream, file.Name, file.ContentType);
-            if (result == null) { Toast("Upload failed", "error"); return; }
+            // Parse the API response (ApiResponse<MediaUploadResult>)
+            var apiRes = resultElement.Deserialize<ApiResponse<MediaUploadResult>>(
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+            );
 
-            uploadPct = 100;
-            StateHasChanged();
+            if (apiRes?.Data == null)
+            {
+                Toast("Upload failed: No data returned.", "error");
+            }
+            else
+            {
+                var data = apiRes.Data;
+                uploadPct = 100;
+                
+                pendingMedia = new MediaUploadDraft(
+                    data.Url,
+                    data.PublicId,
+                    data.MediaType ?? "raw",
+                    data.FileName,
+                    data.Bytes);
 
-            pendingMedia = new MediaUploadDraft(
-                result.Url,
-                result.PublicId,
-                // If API returns "raw" but file is audio/image/video, keep the more specific type when possible
-                (result.MediaType ?? "raw"),
-                result.FileName,
-                result.Bytes);
-
-            Toast("Attachment ready ✓ Add a caption (optional) and press Send.", "success");
-            await FocusInput();
+                Toast("Attachment ready ✓ Add a caption (optional) and press Send.", "success");
+                _ = FocusInput();
+            }
         }
-        catch (Exception ex) { Toast("Upload error: " + ex.Message, "error"); }
-        finally { uploading = false; uploadPct = 0; StateHasChanged(); }
+        catch (Exception ex)
+        {
+            Toast("Upload processing error: " + ex.Message, "error");
+        }
+        finally
+        {
+            uploading = false;
+            uploadPct = 0;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public void OnUploadFailed(string errorMessage)
+    {
+        uploading = false;
+        uploadPct = 0;
+        Toast("Upload failed: " + errorMessage, "error");
+        StateHasChanged();
     }
 
     // ── Voice recording ───────────────────────────────────
@@ -504,8 +566,21 @@ public partial class Chat : IAsyncDisposable
         {
             await JS.InvokeVoidAsync("voice.startVoiceRecording");
             recording = true;
+            recordingStartTime = DateTime.UtcNow;
+            voiceTimerString = "00:00";
+            voiceTimer?.Stop();
+            voiceTimer = new System.Timers.Timer(1000);
+            voiceTimer.Elapsed += (s, e) =>
+            {
+                if (recordingStartTime.HasValue)
+                {
+                    var duration = DateTime.UtcNow - recordingStartTime.Value;
+                    voiceTimerString = $"{(int)duration.TotalMinutes:D2}:{duration.Seconds:D2}";
+                    InvokeAsync(StateHasChanged);
+                }
+            };
+            voiceTimer.Start();
             StateHasChanged();
-            Toast("Recording… click again to send", "info");
         }
         catch (Exception ex)
         {
@@ -513,9 +588,20 @@ public partial class Chat : IAsyncDisposable
         }
     }
 
+    async Task CancelRecording()
+    {
+        if (!recording) return;
+        recording = false;
+        voiceTimer?.Stop();
+        try { await JS.InvokeVoidAsync("voice.cancelVoiceRecording"); } catch { }
+        StateHasChanged();
+        Toast("Recording cancelled", "info");
+    }
+
     async Task StopAndSendVoiceNote()
     {
         recording = false;
+        voiceTimer?.Stop();
         StateHasChanged();
 
         try
@@ -621,8 +707,19 @@ public partial class Chat : IAsyncDisposable
         Nav.NavigateTo("/");
     }
 
+    async Task ToggleTheme()
+    {
+        try
+        {
+            var newTheme = await JS.InvokeAsync<string>("orbitTheme.toggleTheme");
+            isDarkMode = newTheme != "light";
+        }
+        catch { isDarkMode = !isDarkMode; }
+    }
+
     public async ValueTask DisposeAsync()
     {
+        _objRef?.Dispose();
         try { _sessionCts?.Cancel(); } catch { /* ignore */ }
         _sessionCts?.Dispose();
         _sessionCts = null;
@@ -630,6 +727,7 @@ public partial class Chat : IAsyncDisposable
         Hub.OnMessage          -= OnMessage;
         Hub.OnPrivateMessage   -= OnPrivateMessage;
         typingTimer?.Dispose();
+        voiceTimer?.Dispose();
         await Hub.DisposeAsync();
     }
 
@@ -655,5 +753,19 @@ public partial class Chat : IAsyncDisposable
     {
         if (string.IsNullOrWhiteSpace(name)) return "?";
         return name.Trim()[0].ToString().ToUpperInvariant();
+    }
+
+    void PromptLink(string url)
+    {
+        pendingLinkUrl = url;
+    }
+
+    async Task CopyPendingLink()
+    {
+        if (pendingLinkUrl != null)
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", pendingLinkUrl);
+            pendingLinkUrl = null;
+        }
     }
 }

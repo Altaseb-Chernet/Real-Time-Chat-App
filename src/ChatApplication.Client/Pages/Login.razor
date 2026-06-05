@@ -3,18 +3,22 @@
 @inject AuthService Auth
 @inject NavigationManager Nav
 @inject AppState State
+@inject IJSRuntime JS
 
-<PageTitle>Lyra Chat — Sign In</PageTitle>
+<PageTitle>OrbitChat — Sign In</PageTitle>
 
 <div class="auth-page">
     <div class="auth-card">
         <div class="auth-logo">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="10" r="1" fill="currentColor" stroke="none"/>
+                <circle cx="8" cy="10" r="1" fill="currentColor" stroke="none"/>
+                <circle cx="16" cy="10" r="1" fill="currentColor" stroke="none"/>
             </svg>
-            <span>ChatApp</span>
+            <span>OrbitChat</span>
         </div>
-        <p class="auth-subtitle">A calm, focused space for real-time team chat.</p>
+        <p class="auth-subtitle">Real-time distributed messaging for modern teams.</p>
 
         <div class="auth-tabs">
             <button class="auth-tab @(isLogin ? "active" : "")" @onclick="() => isLogin = true">Sign In</button>
@@ -24,14 +28,14 @@
         @if (isLogin)
         {
             <div class="form-group">
-                <label>Email</label>
-                <input type="email" @bind="loginEmail" placeholder="you@example.com" class="form-input" @onkeydown="OnLoginKey"/>
+                <label for="login-email">Email</label>
+                <input id="login-email" type="email" @bind="loginEmail" placeholder="you@example.com" class="form-input" @onkeydown="OnLoginKey" autocomplete="email"/>
             </div>
             <div class="form-group">
-                <label>Password</label>
+                <label for="login-password">Password</label>
                 <div class="input-pw-wrap">
-                    <input type="@(showPw ? "text" : "password")" @bind="loginPassword" placeholder="••••••••" class="form-input" @onkeydown="OnLoginKey"/>
-                    <button class="pw-toggle" @onclick="() => showPw = !showPw" type="button">@(showPw ? "🙈" : "👁️")</button>
+                    <input id="login-password" type="@(showPw ? "text" : "password")" @bind="loginPassword" placeholder="••••••••" class="form-input" @onkeydown="OnLoginKey" autocomplete="current-password"/>
+                    <button class="pw-toggle" @onclick="() => showPw = !showPw" type="button" aria-label="Toggle password visibility">@(showPw ? "🙈" : "👁️")</button>
                 </div>
             </div>
             <label class="remember-row">
@@ -45,18 +49,18 @@
         else
         {
             <div class="form-group">
-                <label>Username</label>
-                <input type="text" @bind="regUsername" placeholder="johndoe" class="form-input" @onkeydown="OnRegKey"/>
+                <label for="reg-username">Username</label>
+                <input id="reg-username" type="text" @bind="regUsername" placeholder="johndoe" class="form-input" @onkeydown="OnRegKey" autocomplete="username"/>
             </div>
             <div class="form-group">
-                <label>Email</label>
-                <input type="email" @bind="regEmail" placeholder="you@example.com" class="form-input" @onkeydown="OnRegKey"/>
+                <label for="reg-email">Email</label>
+                <input id="reg-email" type="email" @bind="regEmail" placeholder="you@example.com" class="form-input" @onkeydown="OnRegKey" autocomplete="email"/>
             </div>
             <div class="form-group">
-                <label>Password</label>
+                <label for="reg-password">Password</label>
                 <div class="input-pw-wrap">
-                    <input type="@(showPw ? "text" : "password")" @bind="regPassword" placeholder="Min 8 characters" class="form-input" @onkeydown="OnRegKey"/>
-                    <button class="pw-toggle" @onclick="() => showPw = !showPw" type="button">@(showPw ? "🙈" : "👁️")</button>
+                    <input id="reg-password" type="@(showPw ? "text" : "password")" @bind="regPassword" placeholder="Min 8 characters" class="form-input" @onkeydown="OnRegKey" autocomplete="new-password"/>
+                    <button class="pw-toggle" @onclick="() => showPw = !showPw" type="button" aria-label="Toggle password visibility">@(showPw ? "🙈" : "👁️")</button>
                 </div>
             </div>
             <label class="remember-row">
@@ -72,33 +76,159 @@
         {
             <div class="auth-error">@error</div>
         }
+
+        <div class="auth-footer">
+            <span>Distributed Architecture</span>
+            <span class="auth-dot">·</span>
+            <span>End-to-End Secure</span>
+            <span class="auth-dot">·</span>
+            <span>Real-Time</span>
+        </div>
     </div>
+
+    <button class="theme-toggle auth-theme-btn" @onclick="ToggleTheme" type="button" title="Toggle dark/light mode" aria-label="Toggle theme">
+        @(isDarkMode ? "☀️" : "🌙")
+    </button>
 </div>
 
 <style>
-.auth-page{display:flex;align-items:center;justify-content:center;min-height:100dvh;padding:max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));background:radial-gradient(ellipse 85% 55% at 50% -15%,rgba(20,184,166,.22) 0%,transparent 55%),radial-gradient(ellipse 60% 40% at 100% 100%,rgba(249,115,22,.08) 0%,transparent 50%),#070b12}
-.auth-card{background:#0f1419;border:1px solid rgba(20,184,166,.2);border-radius:18px;padding:2.5rem 2.25rem;width:100%;max-width:420px;box-shadow:0 24px 80px rgba(0,0,0,.55),0 0 0 1px rgba(255,255,255,.03) inset}
-.auth-logo{display:flex;align-items:center;gap:.6rem;font-size:1.5rem;font-weight:800;background:linear-gradient(135deg,#2dd4bf,#f97316);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:.4rem}
-.auth-subtitle{color:#94a3b8;font-size:.875rem;margin-bottom:1.75rem;line-height:1.45}
-.auth-tabs{display:flex;gap:.4rem;margin-bottom:1.5rem;background:#151c24;padding:.35rem;border-radius:12px;border:1px solid rgba(148,163,184,.12)}
-.auth-tab{flex:1;padding:.55rem;border:none;border-radius:8px;background:transparent;color:#94a3b8;cursor:pointer;font-size:.875rem;font-weight:500;font-family:inherit;transition:all .2s}
-.auth-tab.active{background:linear-gradient(135deg,#0d9488,#14b8a6);color:#fff;font-weight:600;box-shadow:0 4px 20px rgba(20,184,166,.25)}
-.form-group{margin-bottom:1rem}
-.form-group label{display:block;font-size:.75rem;color:#8b949e;margin-bottom:.4rem;font-weight:500;text-transform:uppercase;letter-spacing:.06em}
-.form-input{width:100%;padding:.7rem 1rem;background:#1c2128;border:1px solid #30363d;border-radius:10px;color:#e6edf3;font-size:.9rem;outline:none;font-family:inherit;transition:border-color .2s,box-shadow .2s}
-.form-input:focus{border-color:#14b8a6;box-shadow:0 0 0 3px rgba(20,184,166,.2)}
-.remember-row{display:flex;align-items:center;gap:.5rem;font-size:.8rem;color:#94a3b8;margin:.25rem 0 0;cursor:pointer;user-select:none}
-.remember-row input{width:16px;height:16px;accent-color:#14b8a6}
-.form-input::placeholder{color:#7d8590}
-.input-pw-wrap{position:relative}
-.input-pw-wrap .form-input{padding-right:2.5rem}
-.pw-toggle{position:absolute;right:.6rem;top:50%;transform:translateY(-50%);background:transparent;border:none;cursor:pointer;font-size:.9rem;opacity:.6;transition:opacity .15s}
-.pw-toggle:hover{opacity:1}
-.btn-primary{display:flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:.8rem;background:linear-gradient(135deg,#0d9488,#14b8a6);color:#fff;border:none;border-radius:12px;font-size:.9rem;font-weight:600;cursor:pointer;font-family:inherit;margin-top:.75rem;transition:all .2s;box-shadow:0 6px 24px rgba(20,184,166,.28)}
-.btn-primary:hover:not(:disabled){filter:brightness(1.06);transform:translateY(-1px)}
-.btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none}
-.btn-spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
-.auth-error{background:rgba(248,81,73,.12);border:1px solid rgba(248,81,73,.4);border-radius:6px;color:#f85149;padding:.6rem .9rem;font-size:.82rem;margin-top:.75rem}
+    .auth-page {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100dvh;
+        padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+        background: var(--splash-bg);
+        position: relative;
+    }
+    .auth-card {
+        background: var(--auth-card-bg);
+        border: 1px solid var(--auth-card-border);
+        border-radius: var(--radius-2xl);
+        padding: 2.5rem 2.25rem;
+        width: 100%;
+        max-width: 430px;
+        box-shadow: var(--shadow-xl);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        animation: fadeInUp 0.5s var(--ease-out);
+    }
+    .auth-logo {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        font-size: 1.5rem;
+        font-weight: 800;
+        background: var(--accent-gradient);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        margin-bottom: 0.4rem;
+    }
+    .auth-logo svg { color: var(--accent); flex-shrink: 0; }
+    .auth-subtitle {
+        color: var(--text-secondary);
+        font-size: var(--font-base);
+        margin-bottom: 1.75rem;
+        line-height: 1.5;
+    }
+    .auth-tabs {
+        display: flex;
+        gap: 0.35rem;
+        margin-bottom: 1.5rem;
+        background: var(--surface-glass);
+        padding: 0.3rem;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border);
+    }
+    .auth-tab {
+        flex: 1;
+        padding: 0.55rem;
+        border: none;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+        font-size: var(--font-base);
+        font-weight: 500;
+        font-family: inherit;
+        transition: all 0.2s;
+    }
+    .auth-tab.active {
+        background: var(--accent-gradient);
+        color: white;
+        font-weight: 600;
+        box-shadow: var(--shadow-glow);
+    }
+    .remember-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: var(--font-sm);
+        color: var(--text-secondary);
+        margin: 0.25rem 0 0;
+        cursor: pointer;
+        user-select: none;
+    }
+    .remember-row input { width: 16px; height: 16px; accent-color: var(--accent); }
+    .input-pw-wrap { position: relative; }
+    .input-pw-wrap .form-input { padding-right: 2.5rem; }
+    .pw-toggle {
+        position: absolute;
+        right: 0.6rem;
+        top: 50%;
+        transform: translateY(-50%);
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        font-size: 0.9rem;
+        opacity: 0.6;
+        transition: opacity 0.15s;
+    }
+    .pw-toggle:hover { opacity: 1; }
+    .btn-primary {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        width: 100%;
+        padding: 0.8rem;
+        background: var(--accent-gradient);
+        color: white;
+        border: none;
+        border-radius: var(--radius-md);
+        font-size: var(--font-md);
+        font-weight: 600;
+        cursor: pointer;
+        font-family: inherit;
+        margin-top: 0.75rem;
+        transition: all 0.2s;
+        box-shadow: var(--shadow-glow);
+    }
+    .btn-primary:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .btn-spinner {
+        width: 16px; height: 16px;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+    }
+    .auth-footer {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        margin-top: 1.5rem;
+        font-size: var(--font-xs);
+        color: var(--text-tertiary);
+    }
+    .auth-dot { opacity: 0.4; }
+    .auth-theme-btn {
+        position: absolute;
+        top: 1.5rem;
+        right: 1.5rem;
+    }
 </style>
 
 @code {
@@ -106,6 +236,7 @@
     string loginEmail = "", loginPassword = "";
     string regUsername = "", regEmail = "", regPassword = "";
     string? error;
+    bool isDarkMode = true;
 
     protected override async Task OnInitializedAsync()
     {
@@ -122,6 +253,23 @@
         var remembered = await Auth.GetRememberedEmailAsync();
         if (!string.IsNullOrEmpty(remembered))
             loginEmail = remembered;
+
+        try
+        {
+            var theme = await JS.InvokeAsync<string>("orbitTheme.getTheme");
+            isDarkMode = theme != "light";
+        }
+        catch { /* JS not ready yet */ }
+    }
+
+    async Task ToggleTheme()
+    {
+        try
+        {
+            var newTheme = await JS.InvokeAsync<string>("orbitTheme.toggleTheme");
+            isDarkMode = newTheme != "light";
+        }
+        catch { isDarkMode = !isDarkMode; }
     }
 
     async Task DoLogin()

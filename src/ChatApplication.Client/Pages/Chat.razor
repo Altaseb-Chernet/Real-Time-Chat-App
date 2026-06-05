@@ -7,7 +7,7 @@
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
-<PageTitle>Lyra Chat</PageTitle>
+<PageTitle>OrbitChat</PageTitle>
 
 <div class="chat-app" @onpointerdown="OnPointerActivity">
 
@@ -16,34 +16,42 @@
 <div class="chat-layout">
 
     <!-- ── Sidebar ──────────────────────────────────────── -->
-    <aside class="sidebar @(sidebarOpen ? "is-open" : "")">
+    <aside class="sidebar @(sidebarOpen ? "is-open" : "")" role="navigation" aria-label="Chat navigation">
         <div class="sidebar-top">
             <div class="sidebar-brand-row">
                 <div class="sidebar-logo">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                     </svg>
-                    Lyra
+                    OrbitChat
                 </div>
-                <button type="button" class="icon-btn sidebar-close-btn" @onclick="CloseSidebar" aria-label="Close menu" title="Close">✕</button>
+                <div style="display:flex;gap:4px;align-items:center;">
+                    <button class="theme-toggle" @onclick="ToggleTheme" type="button" title="Toggle theme" aria-label="Toggle dark/light mode">
+                        @(isDarkMode ? "☀️" : "🌙")
+                    </button>
+                </div>
             </div>
             <div class="sidebar-search">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
-                <input type="text" placeholder="Search…" @bind="searchQuery" @bind:event="oninput"/>
+                <input type="text" placeholder="Search conversations…" @bind="searchQuery" @bind:event="oninput" aria-label="Search conversations"/>
             </div>
         </div>
 
         <!-- Tabs -->
-        <div class="sidebar-tabs">
-            <button type="button" class="stab @(State.CurrentView == AppState.ViewMode.Room ? "active" : "")"
+        <div class="sidebar-tabs" role="tablist">
+            <button type="button" role="tab" class="stab @(State.CurrentView == AppState.ViewMode.Room ? "active" : "")"
+                    aria-selected="@(State.CurrentView == AppState.ViewMode.Room)"
                     @onclick="@(() => { CloseSidebar(); State.CurrentView = AppState.ViewMode.Room; })">
-                👥 Rooms
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                Rooms
             </button>
-            <button type="button" class="stab @(State.CurrentView == AppState.ViewMode.DM ? "active" : "")"
+            <button type="button" role="tab" class="stab @(State.CurrentView == AppState.ViewMode.DM ? "active" : "")"
+                    aria-selected="@(State.CurrentView == AppState.ViewMode.DM)"
                     @onclick="@(() => { CloseSidebar(); State.CurrentView = AppState.ViewMode.DM; })">
-                💬 DMs
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                DMs
                 @if (State.TotalUnreadDms > 0)
                 {
                     <span class="badge">@State.TotalUnreadDms</span>
@@ -56,17 +64,18 @@
         {
             <div class="sidebar-section-label">
                 <span>Rooms</span>
-                <button class="icon-btn" @onclick="OpenNewRoomModal" title="New room">
+                <button class="icon-btn" @onclick="OpenNewRoomModal" title="New room" aria-label="Create new room">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                         <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                     </svg>
                 </button>
             </div>
-            <div class="room-list">
+            <div class="room-list" role="listbox" aria-label="Chat rooms">
                 @foreach (var room in FilteredRooms)
                 {
                     var unread = State.UnreadRooms.TryGetValue(room.Id, out var u) ? u : 0;
                     <div class="room-item @(State.ActiveRoomId == room.Id ? "active" : "")"
+                         role="option" aria-selected="@(State.ActiveRoomId == room.Id)"
                          @onclick="() => SelectRoom(room)">
                         <span class="room-hash">#</span>
                         <span class="room-name">@room.Name</span>
@@ -80,12 +89,13 @@
         @if (State.CurrentView == AppState.ViewMode.DM)
         {
             <div class="sidebar-section-label"><span>Direct Messages</span></div>
-            <div class="room-list">
-                @foreach (var user in State.Users.Where(u => u.UserId != Auth.UserId))
+            <div class="room-list" role="listbox" aria-label="Direct messages">
+                @foreach (var user in FilteredUsers)
                 {
                     var unread = State.UnreadDms.TryGetValue(user.UserId, out var u) ? u : 0;
                     var isActive = State.ActiveDmUserId == user.UserId && State.CurrentView == AppState.ViewMode.DM;
                     <div class="room-item @(isActive ? "active" : "")"
+                         role="option" aria-selected="@isActive"
                          @onclick="async () => await OpenDm(user)">
                         <div class="dm-avatar">@AvatarInitial(user.Username)
                             <span class="status-dot @user.Status.ToLower()"></span>
@@ -94,7 +104,7 @@
                         @if (unread > 0) { <span class="badge">@unread</span> }
                     </div>
                 }
-                @if (!State.Users.Any(u => u.UserId != Auth.UserId))
+                @if (!FilteredUsers.Any())
                 {
                     <div class="empty-hint">No users found</div>
                 }
@@ -108,7 +118,7 @@
                 <div class="my-name">@Auth.Username</div>
                 <div class="my-status">● Online</div>
             </div>
-            <button class="icon-btn danger" @onclick="Logout" title="Sign out">
+            <button class="icon-btn danger" @onclick="Logout" title="Sign out" aria-label="Sign out">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
                     <polyline points="16 17 21 12 16 7"/>
@@ -119,30 +129,36 @@
     </aside>
 
     <!-- ── Main ─────────────────────────────────────────── -->
-    <main class="chat-main">
+    <main class="chat-main" role="main" aria-label="Chat area">
         <div class="mobile-toolbar">
             <button type="button" class="icon-btn mobile-menu-btn" @onclick="OpenSidebar" aria-label="Open menu" title="Menu">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>
                 </svg>
             </button>
-            <span class="mobile-toolbar-title">Lyra</span>
+            <span class="mobile-toolbar-title">OrbitChat</span>
         </div>
         @if (State.CurrentView == AppState.ViewMode.Room && State.ActiveRoomId == null)
         {
             <div class="empty-state">
-                <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+                <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    <circle cx="12" cy="10" r="1" fill="currentColor" stroke="none" opacity="0.3"/>
+                    <circle cx="8" cy="10" r="1" fill="currentColor" stroke="none" opacity="0.3"/>
+                    <circle cx="16" cy="10" r="1" fill="currentColor" stroke="none" opacity="0.3"/>
                 </svg>
-                <h3>No room selected</h3>
-                <p>Pick a room from the sidebar or create a new one.</p>
-                <button class="btn-accent" @onclick="OpenNewRoomModal">+ Create a Room</button>
+                <h3>Select a room to start chatting</h3>
+                <p>Pick a room from the sidebar or create a new one to begin the conversation.</p>
+                <button class="btn-accent" @onclick="OpenNewRoomModal">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Create a Room
+                </button>
             </div>
         }
         else if (State.CurrentView == AppState.ViewMode.DM && State.ActiveDmUserId == null)
         {
             <div class="empty-state">
-                <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+                <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                 </svg>
                 <h3>No conversation selected</h3>
@@ -179,19 +195,19 @@
                     {
                         @if (IsRoomCreator)
                         {
-                            <button class="icon-btn danger" @onclick="OpenDeleteRoomModal" title="Delete room permanently">
+                            <button class="icon-btn danger" @onclick="OpenDeleteRoomModal" title="Delete room permanently" aria-label="Delete room">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                     <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
                                 </svg>
                             </button>
                         }
-                        <button class="icon-btn" @onclick="RefreshMessages" title="Refresh">
+                        <button class="icon-btn" @onclick="RefreshMessages" title="Refresh" aria-label="Refresh messages">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <polyline points="23 4 23 10 17 10"/>
                                 <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
                             </svg>
                         </button>
-                        <button class="icon-btn danger" @onclick="LeaveRoom" title="Leave room">
+                        <button class="icon-btn danger" @onclick="LeaveRoom" title="Leave room" aria-label="Leave room">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
                                 <polyline points="16 17 21 12 16 7"/>
@@ -203,26 +219,29 @@
             </div>
 
             <!-- Messages -->
-            <div class="messages-area" id="messages-area">
+            <div class="messages-area" id="messages-area" role="log" aria-label="Messages" aria-live="polite">
                 @{
                     string? lastSender = null;
+                    DateTime? lastDate = null;
                 }
                 @if (State.CurrentView == AppState.ViewMode.Room && State.ActiveRoomId != null)
                 {
                     foreach (var msg in State.GetRoomMessages(State.ActiveRoomId))
                     {
+                        @RenderDateSeparator(msg.SentAt, ref lastDate)
                         var isMe   = msg.SenderId == Auth.UserId;
                         var isCont = lastSender == msg.SenderId;
                         lastSender = msg.SenderId;
                         <MessageBubble Msg="@msg" IsMe="@isMe" IsContinued="@isCont"
                                        OnEdit="StartEdit" OnDelete="DeleteMsg" OnCopy="CopyMsg"
-                                       OpenRequested="OpenLightbox"/>
+                                       OpenRequested="OpenLightbox" LinkClickRequested="PromptLink"/>
                     }
                 }
                 else if (State.CurrentView == AppState.ViewMode.DM && State.ActiveDmUserId != null)
                 {
                     foreach (var dm in State.GetDmMessages(State.ActiveDmUserId))
                     {
+                        @RenderDateSeparator(dm.SentAt, ref lastDate)
                         var isMe   = dm.SenderId == Auth.UserId;
                         var isCont = lastSender == dm.SenderId;
                         lastSender = dm.SenderId;
@@ -230,14 +249,14 @@
                             "", dm.SentAt, false, false, dm.MediaUrl, dm.MediaType, dm.MediaName, dm.MediaBytes);
                         <MessageBubble Msg="@asMsg" IsMe="@isMe" IsContinued="@isCont"
                                        OnEdit="@(_ => {})" OnDelete="@(_ => {})" OnCopy="CopyMsg"
-                                       OpenRequested="OpenLightbox"/>
+                                       OpenRequested="OpenLightbox" LinkClickRequested="PromptLink"/>
                     }
                 }
                 <div id="scroll-anchor"></div>
             </div>
 
             <!-- Typing indicator -->
-            <div class="typing-bar">
+            <div class="typing-bar" aria-live="polite">
                 @if (TypingUsernames.Any())
                 {
                     <span>@(string.Join(", ", TypingUsernames)) @(TypingUsernames.Count == 1 ? "is" : "are") typing</span>
@@ -303,18 +322,18 @@
                                 }
                             </div>
                         </div>
-                        <button class="attach-remove" @onclick="@(() => pendingMedia = null)" type="button" title="Remove">✕</button>
+                        <button class="attach-remove" @onclick="@(() => pendingMedia = null)" type="button" title="Remove" aria-label="Remove attachment">✕</button>
                     </div>
                 }
                 <div class="input-row">
-                    <InputFile id="file-picker" OnChange="HandleFileUpload" style="display:none"
-                               accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar"/>
-                    <label class="attach-btn" for="file-picker" title="Attach file" style="cursor:pointer">
+                    <input type="file" id="file-picker" style="display:none"
+                           accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar"/>
+                    <label class="attach-btn" for="file-picker" title="Attach file" style="cursor:pointer" aria-label="Attach file">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
                         </svg>
                     </label>
-                    <button class="attach-btn voice-btn @(recording ? "rec" : "")" @onclick="ToggleRecording" title="Voice message" type="button">
+                    <button class="attach-btn voice-btn @(recording ? "rec" : "")" @onclick="ToggleRecording" title="Voice message" type="button" aria-label="@(recording ? "Stop and send recording" : "Record voice message")">
                         @if (!recording)
                         {
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -329,21 +348,33 @@
                             <span class="rec-dot"></span>
                         }
                     </button>
-                    <input class="msg-input" type="text" placeholder="@InputPlaceholder"
-                           @bind="inputText" @bind:event="oninput"
-                           @onkeydown="HandleKey" @ref="inputRef"/>
-                    <button class="send-btn" @onclick="SendOrEdit" disabled="@((string.IsNullOrWhiteSpace(inputText) && pendingMedia == null && !uploading) || sending)">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                        </svg>
-                    </button>
+                    @if (recording)
+                    {
+                        <div class="voice-timer">Recording... @voiceTimerString</div>
+                        <button class="attach-btn danger" @onclick="CancelRecording" title="Cancel recording" aria-label="Cancel">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                            </svg>
+                        </button>
+                    }
+                    else
+                    {
+                        <input class="msg-input" type="text" placeholder="@InputPlaceholder"
+                               @bind="inputText" @bind:event="oninput"
+                               @onkeydown="HandleKey" @ref="inputRef" aria-label="Message input"/>
+                        <button class="send-btn" @onclick="SendOrEdit" disabled="@((string.IsNullOrWhiteSpace(inputText) && pendingMedia == null && !uploading) || sending)" aria-label="Send message">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                            </svg>
+                        </button>
+                    }
                 </div>
             </div>
         }
     </main>
 
     <!-- ── Right panel ───────────────────────────────────── -->
-    <aside class="right-panel">
+    <aside class="right-panel" role="complementary" aria-label="Members panel">
         <div class="rp-header">
             Members
             @if (State.CurrentView == AppState.ViewMode.Room && State.ActiveRoomId != null)
@@ -429,8 +460,8 @@
         <div class="modal" @onclick:stopPropagation>
             <h3>Create a Room</h3>
             <div class="form-group" style="margin-top:1rem">
-                <label>Room name</label>
-                <input type="text" @bind="newRoomName" class="form-input" placeholder="e.g. general"
+                <label for="new-room-name">Room name</label>
+                <input id="new-room-name" type="text" @bind="newRoomName" class="form-input" placeholder="e.g. general"
                        @onkeydown="@(e => { if (e.Key == "Enter") _ = CreateRoom(); })"/>
             </div>
             @if (!string.IsNullOrEmpty(roomError))
@@ -449,13 +480,13 @@
 @if (lightboxUrl != null)
 {
     <div class="lightbox" @onclick="CloseLightbox">
-        <button class="lightbox-close" @onclick="CloseLightbox">✕</button>
+        <button class="lightbox-close" @onclick="CloseLightbox" aria-label="Close preview">✕</button>
         <img src="@lightboxUrl" alt=""/>
     </div>
 }
 
 <!-- Toast container -->
-<div class="toast-container" id="toast-container">
+<div class="toast-container" id="toast-container" aria-live="assertive">
     @foreach (var t in toasts)
     {
         <div class="toast @t.Type @(t.Visible ? "show" : "")">
@@ -463,3 +494,46 @@
         </div>
     }
 </div>
+
+@if (pendingLinkUrl != null)
+{
+    <div class="modal-backdrop visible">
+        <div class="modal open">
+            <h3>Open Link</h3>
+            <p style="word-break: break-all; margin: var(--space-3) 0;">
+                This link will take you to:<br/>
+                <strong style="color: var(--accent);">@pendingLinkUrl</strong>
+            </p>
+            <div class="modal-actions">
+                <button class="btn-cancel" @onclick="() => pendingLinkUrl = null">Cancel</button>
+                <button class="btn-secondary" @onclick="CopyPendingLink">Copy Link</button>
+                <a class="btn-primary" href="@pendingLinkUrl" target="_blank" rel="noopener" @onclick="() => pendingLinkUrl = null" style="text-decoration: none; text-align: center;">Open Link</a>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    RenderFragment RenderDateSeparator(DateTime msgDate, ref DateTime? lastDate)
+    {
+        var msgDay = msgDate.ToLocalTime().Date;
+        if (lastDate.HasValue && lastDate.Value == msgDay)
+            return builder => { };
+
+        lastDate = msgDay;
+        var label = msgDay == DateTime.Today ? "Today"
+                  : msgDay == DateTime.Today.AddDays(-1) ? "Yesterday"
+                  : msgDay.ToString("MMMM d, yyyy");
+
+        return builder =>
+        {
+            builder.OpenElement(0, "div");
+            builder.AddAttribute(1, "class", "date-separator");
+            builder.OpenElement(2, "span");
+            builder.AddAttribute(3, "class", "date-separator-label");
+            builder.AddContent(4, label);
+            builder.CloseElement();
+            builder.CloseElement();
+        };
+    }
+}
