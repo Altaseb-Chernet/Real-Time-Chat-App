@@ -82,7 +82,7 @@ public class MessageService : IMessageService
         return MapToResponse(message);
     }
 
-    public async Task DeleteMessageAsync(string messageId, string userId)
+    public async Task<MessageResponse> DeleteMessageAsync(string messageId, string userId)
     {
         var message = await _messageRepository.GetByIdAsync(messageId)
             ?? throw new AppException(ErrorMessages.MessageNotFound, 404);
@@ -92,6 +92,10 @@ public class MessageService : IMessageService
 
         await _messageRepository.SoftDeleteAsync(messageId);
         await _messageRepository.SaveChangesAsync();
+        
+        // Return updated mapped response
+        var updated = await _messageRepository.GetByIdWithSenderAsync(messageId);
+        return MapToResponse(updated ?? message);
     }
 
     private static MessageResponse MapToResponse(Message m) => new()

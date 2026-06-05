@@ -7,5 +7,5 @@ public interface IMessageService
     Task<MessageResponse> SendMessageAsync(SendMessageRequest request);
     Task<IEnumerable<MessageResponse>> GetMessagesAsync(string roomId, int page, int pageSize);
     Task<MessageResponse> EditMessageAsync(string messageId, string userId, string newContent);
-    Task DeleteMessageAsync(string messageId, string userId);
+    Task<MessageResponse> DeleteMessageAsync(string messageId, string userId);
 }
