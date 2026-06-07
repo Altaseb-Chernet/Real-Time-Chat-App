@@ -58,6 +58,9 @@ services:
     environment:
       # Replica mode - do NOT set these
       POSTGRES_INITDB_ARGS: ""
+      # Credentials for pg_basebackup in entrypoint
+      PGUSER: replication_user
+      PGPASSWORD: replication_password
     ports:
       - "5433:5432"
     volumes:
@@ -75,9 +78,6 @@ services:
       fi
       exec docker-entrypoint.sh postgres
       '
-    environment:
-      PGUSER: replication_user
-      PGPASSWORD: replication_password
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres"]
       interval: 5s
