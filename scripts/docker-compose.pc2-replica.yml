@@ -22,7 +22,7 @@ services:
       - SKIP_MIGRATIONS=true
       # IMPORTANT: Point to PC1's PostgreSQL
       # Change PC1_IP to PC1's actual IP address
-      - ConnectionStrings__DefaultConnection=Host=PC1_IP;Port=5432;Database=chatapp;Username=postgres;Password=altaseb;Include Error Detail=true
+      - ConnectionStrings__DefaultConnection=Host=PC1_IP;Port=5433;Database=chatapp;Username=postgres;Password=altaseb;Include Error Detail=true
       - JwtSettings__Secret=bbd8dab53ffc6dd9ef781cc176a2aaef3ce2e15a292584f3112fac2010bfccee
       - JwtSettings__Issuer=ChatApplication
       - JwtSettings__Audience=ChatApplication
