@@ -1,0 +1,123 @@
+version: '3.8'
+
+services:
+  # ============================================================
+  # PC1: MASTER DATABASE & MESSAGE BROKER
+  # ============================================================
+  
+  api:
+    build:
+      context: ..
+      dockerfile: scripts/Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5000
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=chatapp;Username=postgres;Password=altaseb;Include Error Detail=true
+      - JwtSettings__Secret=bbd8dab53ffc6dd9ef781cc176a2aaef3ce2e15a292584f3112fac2010bfccee
+      - JwtSettings__Issuer=ChatApplication
+      - JwtSettings__Audience=ChatApplication
+      - JwtSettings__ExpiryMinutes=60
+      - RedisSettings__ConnectionString=redis:6379
+      - RabbitMqSettings__Host=rabbitmq
+      - RabbitMqSettings__Port=5672
+      - RabbitMqSettings__Username=guest
+      - RabbitMqSettings__Password=guest
+      - Cloudinary__CloudName=dlvrwud2y
+      - Cloudinary__ApiKey=536731941853732
+      - Cloudinary__ApiSecret=Ls8EhXPl8xqhcybYS930AZrpFg0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - chatapp-network
+
+  # ============================================================
+  # PostgreSQL - MASTER
+  # This instance accepts writes and replicates to PC2
+  # ============================================================
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: chatapp
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: altaseb
+      # PostgreSQL replication settings
+      POSTGRES_INITDB_ARGS: |
+        -c wal_level=replica
+        -c max_wal_senders=3
+        -c max_replication_slots=3
+        -c hot_standby=on
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_master_data:/var/lib/postgresql/data
+      # Create replication user on startup
+      - ./init-replication.sql:/docker-entrypoint-initdb.d/01-replication.sql
+    restart: unless-stopped
+    networks:
+      - chatapp-network
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_preload_libraries=pg_stat_statements"
+
+  # ============================================================
+  # Redis - PRIMARY
+  # Cache and SignalR backplane
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - chatapp-network
+    command: redis-server --appendonly yes --requirepass ""
+    volumes:
+      - redis_master_data:/data
+
+  # ============================================================
+  # RabbitMQ - BROKER 1 (Clusterable)
+  # Message bus for async events
+  # ============================================================
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"      # AMQP
+      - "15672:15672"    # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_ERLANG_COOKIE: secret_cookie_12345
+      RABBITMQ_NODENAME: rabbit@rabbitmq
+    restart: unless-stopped
+    networks:
+      - chatapp-network
+    volumes:
+      - rabbitmq_master_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  chatapp-network:
+    driver: bridge
+
+volumes:
+  postgres_master_data:
+  redis_master_data:
+  rabbitmq_master_data:
