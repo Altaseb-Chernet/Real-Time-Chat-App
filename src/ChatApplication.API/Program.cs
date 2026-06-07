@@ -37,10 +37,14 @@ builder.Services.AddRazorPages();
 var app = builder.Build();
 
 // ── Database migration on startup ────────────────────────────────────────────
-using (var scope = app.Services.CreateScope())
+var skipMigrations = Environment.GetEnvironmentVariable("SKIP_MIGRATIONS");
+if (string.IsNullOrEmpty(skipMigrations) || skipMigrations.ToLower() != "true")
 {
-    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    db.Database.Migrate();
+    using (var scope = app.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        db.Database.Migrate();
+    }
 }
 
 // ── Error handling (must be first in pipeline) ───────────────────────────────
