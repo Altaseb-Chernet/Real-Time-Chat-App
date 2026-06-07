@@ -208,9 +208,10 @@ public class ChatHub : Hub
             foreach (var connectionId in senderConnections)
                 await Clients.Client(connectionId).SendAsync(HubEvents.ReceivePrivateMessage, payload);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException ex)
         {
-            throw new HubException("Could not save private message. Please try again.");
+            var innerMsg = ex.InnerException?.Message ?? ex.Message;
+            throw new HubException($"Could not save private message: {innerMsg}");
         }
     }
 
