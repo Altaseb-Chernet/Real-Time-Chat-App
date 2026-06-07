@@ -1,0 +1,120 @@
+version: '3.8'
+
+# ============================================================
+# PC2: REPLICA DATABASE & API CLIENT
+# This docker-compose connects to PC1's databases as replicas
+# Replace PC1_IP with actual IP (e.g., 192.168.1.100)
+# ============================================================
+
+services:
+  # ============================================================
+  # API - Reads from local replica, writes go to PC1
+  # ============================================================
+  api:
+    build:
+      context: ..
+      dockerfile: scripts/Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5000
+      # IMPORTANT: Point to PC1's PostgreSQL for writes (NOT local replica)
+      # Change PC1_IP to PC1's actual IP address
+      - ConnectionStrings__DefaultConnection=Host=PC1_IP;Port=5433;Database=chatapp;Username=postgres;Password=altaseb;Include Error Detail=true
+      - JwtSettings__Secret=bbd8dab53ffc6dd9ef781cc176a2aaef3ce2e15a292584f3112fac2010bfccee
+      - JwtSettings__Issuer=ChatApplication
+      - JwtSettings__Audience=ChatApplication
+      - JwtSettings__ExpiryMinutes=60
+      # Point to local Redis replica for reads (faster)
+      - RedisSettings__ConnectionString=redis:6379
+      # Point to PC1's RabbitMQ for messaging
+      - RabbitMqSettings__Host=PC1_IP
+      - RabbitMqSettings__Port=5672
+      - RabbitMqSettings__Username=guest
+      - RabbitMqSettings__Password=guest
+      - Cloudinary__CloudName=dlvrwud2y
+      - Cloudinary__ApiKey=536731941853732
+      - Cloudinary__ApiSecret=Ls8EhXPl8xqhcybYS930AZrpFg0
+    depends_on:
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - chatapp-network
+    # Wait for Redis to be ready before starting
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # PostgreSQL - REPLICA (Read-Only from PC1)
+  # Streams WAL from PC1's master
+  # ============================================================
+  postgres:
+    image: postgres:15
+    environment:
+      # Replica mode - do NOT set these
+      POSTGRES_INITDB_ARGS: ""
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - chatapp-network
+    # IMPORTANT: Initialize as standby/replica from PC1
+    # This runs BEFORE postgres starts
+    entrypoint: |
+      bash -c '
+      if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
+        echo "Initializing replica from PC1..."
+        pg_basebackup -h PC1_IP -D /var/lib/postgresql/data -U replication_user -v -P -W -R
+      fi
+      exec docker-entrypoint.sh postgres
+      '
+    environment:
+      PGUSER: replication_user
+      PGPASSWORD: replication_password
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ============================================================
+  # Redis - REPLICA (Read-Only from PC1)
+  # Replicates cache from PC1
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - chatapp-network
+    # Start Redis as replica of PC1's Redis
+    command: 
+      - redis-server
+      - --slaveof
+      - PC1_IP
+      - "6379"
+      - --appendonly
+      - "yes"
+    volumes:
+      - redis_replica_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+networks:
+  chatapp-network:
+    driver: bridge
+
+volumes:
+  postgres_replica_data:
+  redis_replica_data:
