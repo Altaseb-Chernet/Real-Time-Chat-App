@@ -4,6 +4,10 @@ using ChatApplication.Infrastructure.Data.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.StaticFiles;
 
+// Npgsql 6+ rejects DateTime with Kind=Unspecified for 'timestamp with time zone' columns.
+// Enable legacy behavior so existing DateTime properties (CreatedAt, SentAt, etc.) work correctly.
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
